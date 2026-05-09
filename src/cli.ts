@@ -35,6 +35,13 @@ import {
   VERSION_PATH,
 } from "./commands/server-version.js";
 import {
+  buildWorkoutsListPath,
+  probeWorkoutsList,
+  workoutsListHumanSuccessLine,
+  workoutsListHttpErrorMessageForCli,
+  workoutsListQueryFromCli,
+} from "./commands/workouts-list.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -44,6 +51,7 @@ import {
   CLI_ERROR_CONFIG_INVALID,
   CLI_ERROR_CONFIG_WRITE_FAILED,
   CLI_ERROR_HTTP,
+  CLI_ERROR_INVALID_ARGUMENTS,
   CLI_ERROR_MISSING_API_KEY,
   CLI_ERROR_TRANSPORT,
   writeCommandError,
@@ -349,6 +357,135 @@ ${HELP_GLOBALS_HINT}
       writeCommandError(merged.output, {
         code: CLI_ERROR_HTTP,
         message: authMeHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+const workoutsCmd = program
+  .command("workouts")
+  .description("Workout listing and related read-only API commands.");
+
+workoutsCmd
+  .command("list")
+  .description(
+    "GET /workouts — list workouts with pagination and filters (OpenAPI query param names).",
+  )
+  .option("--page <n>", "Page number (query: page)")
+  .option(
+    "--page-size <n>",
+    "Items per page (query: pageSize; API default 20, max 100)",
+  )
+  .option(
+    "--start-date <date>",
+    "Inclusive start filter (query: startDate, ISO 8601 date-time)",
+  )
+  .option(
+    "--end-date <date>",
+    "Inclusive end filter (query: endDate, ISO 8601 date-time)",
+  )
+  .option("--min-distance-m <m>", "Minimum distance in meters (minDistanceM)")
+  .option("--max-distance-m <m>", "Maximum distance in meters (maxDistanceM)")
+  .option("--keyword <text>", "Search name, device, source (keyword)")
+  .option(
+    "--run-type <type>",
+    'Run type filter (runType), e.g. "Race", "Long Run", "Easy Run"',
+  )
+  .option(
+    "--sort-by <field>",
+    'Sort field (sortBy): name, duration, distance, elevation, relativeeffort, startedAt',
+  )
+  .option("--sort-order <order>", 'Sort order (sortOrder): "asc" or "desc"')
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo workouts list
+  tempo workouts list --page 2 --page-size 50 --keyword "morning"
+  tempo workouts list --start-date 2025-01-01T00:00:00Z --sort-by distance --sort-order asc
+  tempo --output json workouts list --run-type "Long Run"
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      page?: string;
+      pageSize?: string;
+      startDate?: string;
+      endDate?: string;
+      minDistanceM?: string;
+      maxDistanceM?: string;
+      keyword?: string;
+      runType?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo workouts list: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const parsed = workoutsListQueryFromCli({
+      page: merged.page,
+      pageSize: merged.pageSize,
+      startDate: merged.startDate,
+      endDate: merged.endDate,
+      minDistanceM: merged.minDistanceM,
+      maxDistanceM: merged.maxDistanceM,
+      keyword: merged.keyword,
+      runType: merged.runType,
+      sortBy: merged.sortBy,
+      sortOrder: merged.sortOrder,
+    });
+    if ("error" in parsed) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: parsed.error,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeWorkoutsList(merged.baseUrl, key, parsed.ok);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        workoutsListHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildWorkoutsListPath(parsed.ok),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: workoutsListHttpErrorMessageForCli(
           result.status,
           result.body,
           key,

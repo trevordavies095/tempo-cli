@@ -3,6 +3,7 @@ import { writeErrLine } from "../io/streams.js";
 
 /** Stable codes for CLI-local failures (distinct from future HTTP API error codes). */
 export const CLI_ERROR_CONFIG_INVALID = "CONFIG_INVALID";
+export const CLI_ERROR_INVALID_ARGUMENTS = "INVALID_ARGUMENTS";
 export const CLI_ERROR_MISSING_API_KEY = "MISSING_API_KEY";
 export const CLI_ERROR_CONFIG_WRITE_FAILED = "CONFIG_WRITE_FAILED";
 /** HTTP response received but status is not successful (e.g. GET /health returned 503). */
