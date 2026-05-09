@@ -1,4 +1,5 @@
 import type { OutputMode } from "../config/file.js";
+import { writeOutLine } from "../io/streams.js";
 
 /** Successful command payload to stdout (human line or compact JSON). */
 export function writeCommandSuccess(
@@ -7,8 +8,8 @@ export function writeCommandSuccess(
   jsonBody: Record<string, unknown>,
 ): void {
   if (output === "json") {
-    console.log(JSON.stringify(jsonBody));
+    writeOutLine(JSON.stringify(jsonBody));
   } else {
-    console.log(humanLine);
+    writeOutLine(humanLine);
   }
 }

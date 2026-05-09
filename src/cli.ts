@@ -11,6 +11,7 @@ import {
 } from "./config/runtime.js";
 import { readKeyFromStdinIfAvailable } from "./config/stdin-key.js";
 import { persistApiKey } from "./config/write.js";
+import { writeOutLine, writeErrLine } from "./io/streams.js";
 import { writeCommandSuccess } from "./output/success.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -30,7 +31,7 @@ const fileLayer = shouldSkipConfigLoad(process.argv.slice(2))
       try {
         return loadConfigFile(configPath);
       } catch (e) {
-        console.error(e instanceof Error ? e.message : String(e));
+        writeErrLine(e instanceof Error ? e.message : String(e));
         process.exit(1);
       }
     })();
@@ -98,7 +99,7 @@ configCmd
     if (!key) key = process.env.TEMPO_API_KEY?.trim();
     if (!key) key = readKeyFromStdinIfAvailable();
     if (!key) {
-      console.error(
+      writeErrLine(
         "tempo config set-api-key: provide --api-key, set TEMPO_API_KEY, or pipe the key on stdin (non-interactive).",
       );
       process.exit(1);
@@ -107,12 +108,12 @@ configCmd
     try {
       persistApiKey(path, key);
     } catch (e) {
-      console.error(e instanceof Error ? e.message : String(e));
+      writeErrLine(e instanceof Error ? e.message : String(e));
       process.exit(1);
     }
-    console.log(`Wrote API key to ${path}`);
+    writeOutLine(`Wrote API key to ${path}`);
     if (process.platform !== "win32") {
-      console.error("Set config file mode to 0600 (user read/write only).");
+      writeErrLine("Set config file mode to 0600 (user read/write only).");
     }
   });
 

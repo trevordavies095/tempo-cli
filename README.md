@@ -84,6 +84,12 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 - **Tests:** `npm test` (Vitest)
 - **Run locally:** After a build, `npx tempo` or `node dist/cli.js`.
 
+### Stream discipline (stdout vs stderr)
+
+- **stdout:** Successful command **data** — for example [`writeCommandSuccess`](src/output/success.ts), the primary result line from **`tempo config set-api-key`**, and future JSON bodies from API commands.
+- **stderr:** **Errors**, **warnings**, **progress**, and **informational hints** (such as the Unix **`0600`** note after saving an API key). Prefer [`src/io/streams.ts`](src/io/streams.ts) (`writeOutLine` / `writeErrLine`) in new code so piping **`stdout`** stays clean.
+- **Help text** (`--help`, **`tempo` with no subcommand**) is printed by **Commander** to **stdout** by default (pager-friendly). That is separate from machine-oriented JSON success output.
+
 ### HTTP client (for contributors)
 
 Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/http/client.ts)) built on Node’s global **`fetch`**.
