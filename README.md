@@ -90,6 +90,19 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 - **stderr:** **Errors**, **warnings**, **progress**, and **informational hints** (such as the Unix **`0600`** note after saving an API key). Prefer [`src/io/streams.ts`](src/io/streams.ts) (`writeOutLine` / `writeErrLine`) in new code so piping **`stdout`** stays clean.
 - **Help text** (`--help`, **`tempo` with no subcommand**) is printed by **Commander** to **stdout** by default (pager-friendly). That is separate from machine-oriented JSON success output.
 
+### Exit codes
+
+The CLI uses a small, stable set of process exit codes (see [`src/exit/exits.ts`](src/exit/exits.ts)). Successful commands exit **0**. When HTTP-backed commands are added, they should map API outcomes with **`exitCodeForHttpStatus`** (for response status) and **`exitCodeForFetchFailure`** (when **`fetch`** throws before a usable response).
+
+| Code | Meaning |
+| ---: | --- |
+| **0** | Success |
+| **1** | Invalid usage, CLI validation, config parse errors, and other **4xx** HTTP responses not mapped below (Commander also uses **1** for bad flags such as invalid **`--output`**, consistent with **`EXIT_USAGE`**) |
+| **2** | Auth denied (**401** / **403**) |
+| **3** | Server error (**5xx**) |
+| **4** | Not found (**404**) |
+| **5** | Network / DNS / timeout and other transport failures (no successful HTTP response) |
+
 ### HTTP client (for contributors)
 
 Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/http/client.ts)) built on Node’s global **`fetch`**.

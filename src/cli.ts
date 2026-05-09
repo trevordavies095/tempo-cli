@@ -11,6 +11,7 @@ import {
 } from "./config/runtime.js";
 import { readKeyFromStdinIfAvailable } from "./config/stdin-key.js";
 import { persistApiKey } from "./config/write.js";
+import { EXIT_USAGE } from "./exit/exits.js";
 import { writeOutLine, writeErrLine } from "./io/streams.js";
 import { writeCommandSuccess } from "./output/success.js";
 
@@ -32,7 +33,7 @@ const fileLayer = shouldSkipConfigLoad(process.argv.slice(2))
         return loadConfigFile(configPath);
       } catch (e) {
         writeErrLine(e instanceof Error ? e.message : String(e));
-        process.exit(1);
+        process.exit(EXIT_USAGE);
       }
     })();
 
@@ -102,14 +103,14 @@ configCmd
       writeErrLine(
         "tempo config set-api-key: provide --api-key, set TEMPO_API_KEY, or pipe the key on stdin (non-interactive).",
       );
-      process.exit(1);
+      process.exit(EXIT_USAGE);
     }
     const path = getDefaultConfigPath();
     try {
       persistApiKey(path, key);
     } catch (e) {
       writeErrLine(e instanceof Error ? e.message : String(e));
-      process.exit(1);
+      process.exit(EXIT_USAGE);
     }
     writeOutLine(`Wrote API key to ${path}`);
     if (process.platform !== "win32") {
