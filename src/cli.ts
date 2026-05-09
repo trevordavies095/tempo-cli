@@ -151,6 +151,11 @@ import {
   shoeMileageHttpErrorMessageForCli,
 } from "./commands/shoe-mileage.js";
 import {
+  getSystemTimeZone,
+  isValidIanaTimeZone,
+  resolveRecapWeek,
+} from "./weekly-recap/resolve-week.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -2115,6 +2120,120 @@ All shoes commands are read-only (GET) and require an API key (--api-key, TEMPO_
 ${HELP_GLOBALS_HINT}
 `,
 );
+
+program
+  .command("weekly-recap")
+  .description(
+    "Resolve the recap week (Mon–Sun) and UTC bounds for the Tempo API. Full report generation is not wired yet.",
+  )
+  .option(
+    "--week <spec>",
+    'Which week: "last" (default), "current", YYYY-Www (ISO week), or YYYY-MM-DD (a date in the week)',
+    "last",
+  )
+  .option(
+    "--timezone <iana>",
+    "IANA timezone for Mon–Sun boundaries (default: system timezone)",
+  )
+  .option(
+    "--write <path>",
+    "Write output to this path (- or omit = stdout). Use this for the report file; global --output only selects human vs JSON.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  tempo weekly-recap
+  tempo weekly-recap --week current --timezone America/New_York
+  tempo weekly-recap --week 2026-W19 --output json
+  tempo weekly-recap --write ./recap.md
+
+This command does not call the Tempo API yet (week resolution only). No API key required.
+
+Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      week: string;
+      timezone?: string;
+      write?: string;
+    };
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: pickApiKey(merged.apiKey, fileLayer),
+    });
+
+    const tzRaw = merged.timezone?.trim();
+    const tz =
+      tzRaw !== undefined && tzRaw.length > 0 ? tzRaw : getSystemTimeZone();
+    if (!isValidIanaTimeZone(tz)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo weekly-recap: invalid IANA timezone: ${tzRaw ?? ""}`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+
+    const resolved = resolveRecapWeek({
+      weekSpec: merged.week.trim(),
+      timeZoneId: tz,
+      now: new Date(),
+    });
+    if (!resolved.ok) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo weekly-recap: ${resolved.message}`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+
+    const v = resolved.value;
+    const humanLines = [
+      `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
+      `UTC startDate: ${v.utcStartDate}`,
+      `UTC endDate: ${v.utcEndDate}`,
+      `timezoneOffsetMinutes: ${v.timezoneOffsetMinutes}`,
+    ].join("\n");
+
+    const jsonBody: Record<string, unknown> = {
+      ok: true,
+      isoWeekId: v.isoWeekId,
+      localRange: v.localRange,
+      utcStartDate: v.utcStartDate,
+      utcEndDate: v.utcEndDate,
+      timezone: tz,
+      timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+    };
+
+    const writePath = merged.write?.trim();
+    const useStdout = writePath === undefined || writePath === "" || writePath === "-";
+
+    if (useStdout) {
+      writeCommandSuccess(merged.output, humanLines, jsonBody);
+      return;
+    }
+
+    const payload =
+      merged.output === "json"
+        ? `${JSON.stringify(jsonBody)}\n`
+        : `${humanLines}\n`;
+    try {
+      await atomicWriteFile(writePath, new TextEncoder().encode(payload));
+    } catch (e) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_CONFIG_WRITE_FAILED,
+        message: `tempo weekly-recap: could not write --write: ${e instanceof Error ? e.message : String(e)}`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+  });
 
 program
   .command("version")

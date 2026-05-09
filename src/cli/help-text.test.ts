@@ -290,4 +290,17 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("GET /shoes/{id}/mileage");
     expect(out).toContain("UUID");
   });
+
+  it("weekly-recap --help documents week, timezone, write, and global output vs report path", () => {
+    const out = helpFor(["weekly-recap", "--help"]);
+    expect(out).toContain("--week");
+    expect(out).toContain("--timezone");
+    expect(out).toContain("--write");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("weekly-recap");
+    expect(out).toContain("Global --output");
+    expect(out).toContain("human");
+    expect(out).toContain("json");
+    expect(out).toContain("API");
+  });
 });
