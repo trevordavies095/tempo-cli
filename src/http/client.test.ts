@@ -24,6 +24,79 @@ describe("createHttpClient", () => {
     expect(url).toBe("http://localhost:5001/version");
     expect(init.method).toBe("GET");
     expect(init.signal).toBeInstanceOf(AbortSignal);
+    const headers = new Headers(init.headers);
+    expect(headers.has("Authorization")).toBe(false);
+  });
+
+  it("sets Authorization Bearer when apiKey is non-empty", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      apiKey: "tmp_test_token",
+    });
+    await client.get("/version");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe("Bearer tmp_test_token");
+  });
+
+  it("omits Authorization when apiKey is unset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({ baseUrl: "http://localhost:5001" });
+    await client.get("/x");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  });
+
+  it("omits Authorization when apiKey is whitespace-only", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      apiKey: "   \n\t  ",
+    });
+    await client.get("/x");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  });
+
+  it("allows Authorization from init when factory has no apiKey", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({ baseUrl: "http://localhost:5001" });
+    await client.get("/x", {
+      headers: { Authorization: "Bearer from-init" },
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer from-init");
+  });
+
+  it("factory apiKey overrides Authorization from init", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      apiKey: "from-factory",
+    });
+    await client.get("/x", {
+      headers: { Authorization: "Bearer from-init" },
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe(
+      "Bearer from-factory",
+    );
   });
 
   it("prefixes path without leading slash", async () => {

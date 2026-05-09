@@ -6,6 +6,8 @@ export type CreateHttpClientOptions = {
   baseUrl: string;
   /** @default DEFAULT_TIMEOUT_MS */
   timeoutMs?: number;
+  /** When non-empty after trim, sets `Authorization: Bearer <key>` on every GET. */
+  apiKey?: string;
 };
 
 export type HttpClient = {
@@ -39,16 +41,23 @@ function mergeAbortSignals(
 export function createHttpClient(options: CreateHttpClientOptions): HttpClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const configuredApiKey = options.apiKey;
 
   return {
     baseUrl,
     async get(path: string, init?: RequestInit): Promise<Response> {
       const url = resolveRequestUrl(baseUrl, path);
       const signal = mergeAbortSignals(timeoutMs, init?.signal);
-      const { signal: _omit, method: _m, ...rest } = init ?? {};
+      const { signal: _s, method: _m, headers: _h, ...rest } = init ?? {};
+      const headers = new Headers(init?.headers);
+      const token = configuredApiKey?.trim();
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
       return fetch(url, {
         ...rest,
         method: "GET",
+        headers,
         signal,
       });
     },
