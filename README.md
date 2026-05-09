@@ -15,12 +15,14 @@ Official-style command-line client for **[Tempo](https://github.com/trevordavies
 - A running Tempo server reachable from your machine.
 - Machine access via an **admin-issued API key** (`Authorization: Bearer`, key prefix `tmp_` in current Tempo designs). Key creation and rotation happen in Tempo, not in this CLI.
 
-## Command naming (planned)
+## Command naming
 
-- **`tempo workouts list`** — list workouts (plural group).
-- **`tempo workout get <id>`** — one workout by ID.
+- **`tempo workouts list`** — list or filter workouts (plural **`workouts`** for the collection).
+- **`tempo workout get <id>`** — fetch one workout by ID (singular **`workout`**).
 
-Some early examples used `tempo workout list`; the canonical list command above is the one this project will implement (optional alias TBD).
+Some tutorials or older snippets use **`tempo workout list`**. That form is **not** a command in this CLI; use **`tempo workouts list`** instead. There is **no** `workout list` alias in v1—the canonical spelling above is what scripts and docs should standardize on.
+
+For the same wording as **`--help`**, see **`tempo workouts list --help`** and **`tempo workout --help`**.
 
 ## Configuration
 
