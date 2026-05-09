@@ -48,6 +48,9 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("TEMPO_API_KEY");
     expect(out).toContain("tempo --help");
     expect(out).toContain("workouts list");
+    expect(out).toContain("Filter flags use the same names");
+    expect(out).toContain("tempo workout list");
+    expect(out).toContain("tempo workout get");
   });
 
   it("workout get --help includes TEMPO_API_KEY and workout get", () => {
@@ -55,6 +58,8 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("TEMPO_API_KEY");
     expect(out).toContain("tempo --help");
     expect(out).toContain("workout get");
+    expect(out).toContain("tempo workouts list");
+    expect(out).toContain("tempo workout list");
   });
 
   it("workout similar-routes --help includes TEMPO_API_KEY and similar-routes", () => {
@@ -62,6 +67,8 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("TEMPO_API_KEY");
     expect(out).toContain("tempo --help");
     expect(out).toContain("similar-routes");
+    expect(out).toContain("tempo workouts list");
+    expect(out).toContain("tempo workout list");
   });
 
   it("workout media list --help includes TEMPO_API_KEY and media list", () => {
@@ -70,6 +77,8 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("tempo --help");
     expect(out).toContain("media");
     expect(out).toContain("list");
+    expect(out).toContain("tempo workouts list");
+    expect(out).toContain("tempo workout list");
   });
 
   it("workout media download --help includes TEMPO_API_KEY and download", () => {
@@ -78,6 +87,17 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("tempo --help");
     expect(out).toContain("download");
     expect(out).toContain("media");
+    expect(out).toContain("tempo workouts list");
+    expect(out).toContain("tempo workout list");
+  });
+
+  it("workout --help lists subcommands and CLI naming", () => {
+    const out = helpFor(["workout", "--help"]);
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("Subcommands:");
+    expect(out).toContain("tempo workouts list");
+    expect(out).toContain("tempo workout list");
+    expect(out).toContain("TEMPO_API_KEY");
   });
 
   it("version --help includes tempo version and tempo --help", () => {

@@ -122,6 +122,12 @@ const platformHint = process.platform === "win32" ? "Windows" : "Unix";
 const HELP_GLOBALS_HINT =
   "Global options (--base-url, --output, --api-key) and env (TEMPO_BASE_URL, TEMPO_API_KEY) are listed under: tempo --help";
 
+/** Shown on workout-related --help: canonical list vs get naming (P6). */
+const HELP_WORKOUT_CLI_NAMING = `CLI naming:
+  Use "tempo workouts list" (plural workouts) to list or filter workouts.
+  Use "tempo workout get <uuid>" (singular workout) for one workout by id.
+  "tempo workout list" is not a command here (a common mistake); use "tempo workouts list" instead.`;
+
 const program = new Command();
 
 program
@@ -421,6 +427,8 @@ Human mode prints a short summary when the response is JSON, using fields that e
 
 Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
 
+${HELP_WORKOUT_CLI_NAMING}
+
 ${HELP_GLOBALS_HINT}
 `,
   )
@@ -507,6 +515,8 @@ Human mode summarizes JSON arrays (up to 20 rows) with id, name, startedAt, dist
 Use --output json for the full API body inside the standard wrapper on stdout.
 
 Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_WORKOUT_CLI_NAMING}
 
 ${HELP_GLOBALS_HINT}
 `,
@@ -616,6 +626,8 @@ Use --output json for the full API body inside the standard wrapper on stdout.
 
 Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
 
+${HELP_WORKOUT_CLI_NAMING}
+
 ${HELP_GLOBALS_HINT}
 `,
   )
@@ -706,6 +718,8 @@ Global --output human|json applies to error messages on stderr only (structured 
 Writing binary to an interactive terminal can corrupt the display; redirect to a file or use --out-file.
 
 Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_WORKOUT_CLI_NAMING}
 
 ${HELP_GLOBALS_HINT}
 `,
@@ -806,6 +820,17 @@ ${HELP_GLOBALS_HINT}
     process.exit(exitCodeForFetchFailure(result.error));
   });
 
+workoutCmd.addHelpText(
+  "after",
+  `
+Subcommands: get, similar-routes, media list, media download. Run tempo workout <command> --help for each.
+
+${HELP_WORKOUT_CLI_NAMING}
+
+${HELP_GLOBALS_HINT}
+`,
+);
+
 const workoutsCmd = program
   .command("workouts")
   .description("Workout listing and related read-only API commands.");
@@ -849,7 +874,11 @@ Examples:
   tempo workouts list --start-date 2025-01-01T00:00:00Z --sort-by distance --sort-order asc
   tempo --output json workouts list --run-type "Long Run"
 
+Filter flags use the same names as the Tempo API query parameters (see Examples above).
+
 Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_WORKOUT_CLI_NAMING}
 
 ${HELP_GLOBALS_HINT}
 `,
