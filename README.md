@@ -81,7 +81,16 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 - **Build:** `npm run build` (emits JavaScript to `dist/`)
 - **Watch mode:** `npm run dev` (runs the TypeScript compiler in watch mode)
 - **Typecheck:** `npm run typecheck`
+- **Tests:** `npm test` (Vitest)
 - **Run locally:** After a build, `npx tempo` or `node dist/cli.js`.
+
+### HTTP client (for contributors)
+
+Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/http/client.ts)) built on Node’s global **`fetch`**.
+
+- **Default timeout:** **`30_000` ms** (`DEFAULT_TIMEOUT_MS`) per request unless overridden when creating the client.
+- **TLS:** HTTPS uses Node’s default CA trust store (same as other Node TLS). To add corporate roots, use **`NODE_EXTRA_CA_CERTS`** (see the [Node.js documentation](https://nodejs.org/api/cli.html#node_extra_ca_certsfile)).
+- **Proxy / `NO_PROXY`:** There is no custom proxy parser in the CLI. Behavior for **`HTTP_PROXY`**, **`HTTPS_PROXY`**, and **`NO_PROXY` / `no_proxy`** follows your **Node.js version’s `fetch` implementation** (Undici). Newer Node releases improve automatic proxy handling for `fetch`; upgrade Node if your environment requires it, and refer to [Undici](https://github.com/nodejs/undici) / Node release notes for details.
 
 ### CLI usage (early)
 
