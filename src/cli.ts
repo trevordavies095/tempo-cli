@@ -85,6 +85,9 @@ const preFlag = computePreFlagDefaults(fileLayer);
 
 const platformHint = process.platform === "win32" ? "Windows" : "Unix";
 
+const HELP_GLOBALS_HINT =
+  "Global options (--base-url, --output, --api-key) and env (TEMPO_BASE_URL, TEMPO_API_KEY) are listed under: tempo --help";
+
 const program = new Command();
 
 program
@@ -175,6 +178,19 @@ program
   .description(
     "GET /health on the configured base URL without sending an API key (reachability check).",
   )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=http://localhost:5001 tempo health
+  tempo health --base-url http://localhost:5001
+  tempo --output json health
+
+This command does not send an API key.
+
+${HELP_GLOBALS_HINT}
+`,
+  )
   .action(async function (this: Command) {
     const merged = this.optsWithGlobals() as {
       output: "human" | "json";
@@ -222,6 +238,19 @@ serverCmd
   .description(
     "GET /version from the server without sending an API key (public meta endpoint when exposed).",
   )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=http://localhost:5001 tempo server version
+  tempo server version --base-url http://localhost:5001
+  tempo --output json server version
+
+This command does not send an API key.
+
+${HELP_GLOBALS_HINT}
+`,
+  )
   .action(async function (this: Command) {
     const merged = this.optsWithGlobals() as {
       output: "human" | "json";
@@ -268,6 +297,19 @@ authCmd
   .command("me")
   .description(
     "GET /auth/me with your API key (Bearer). Does not use cookies or POST /auth/login.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo auth me
+  tempo --base-url https://tempo.example.com --api-key tmp_... auth me
+  tempo --output json auth me
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
   )
   .action(async function (this: Command) {
     const merged = this.optsWithGlobals() as {
@@ -325,6 +367,16 @@ program
   .command("version")
   .description(
     "Print the local CLI version (npm package). For the running server response from GET /version, use: tempo server version.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  tempo version
+  tempo --output json version
+
+${HELP_GLOBALS_HINT}
+`,
   )
   .action(function (this: Command) {
     const merged = this.optsWithGlobals() as {

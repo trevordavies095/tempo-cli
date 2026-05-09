@@ -126,6 +126,8 @@ Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/
 
 Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists the **config file path**, precedence (file, then env, then flags), and **`TEMPO_BASE_URL`** / **`TEMPO_API_KEY`**.
 
+Subcommands such as **`tempo health`**, **`tempo server version`**, **`tempo auth me`**, and **`tempo version`** also support **`--help`** with copy-paste examples and a reminder to use **`tempo --help`** for globals (subcommand help does not repeat every global flag).
+
 **`tempo health`** calls **`GET /health`** on your configured base URL (**`--base-url`**, **`TEMPO_BASE_URL`**, or `base_url` in the config file). It does **not** send **`Authorization`** or use **`TEMPO_API_KEY`** / **`--api-key`**, so you can check that the instance is reachable before debugging auth.
 
 - **Human (default):** prints `OK (HTTP <status>)`, and if the response has a body, that text on the following line(s).
