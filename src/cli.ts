@@ -139,6 +139,18 @@ import {
   settingsDefaultShoeHttpErrorMessageForCli,
 } from "./commands/settings-default-shoe.js";
 import {
+  SHOES_LIST_PATH,
+  probeShoesList,
+  shoesListHumanSuccessLine,
+  shoesListHttpErrorMessageForCli,
+} from "./commands/shoes-list.js";
+import {
+  buildShoeMileagePath,
+  probeShoeMileage,
+  shoeMileageHumanSuccessLine,
+  shoeMileageHttpErrorMessageForCli,
+} from "./commands/shoe-mileage.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -1930,6 +1942,175 @@ settingsCmd.addHelpText(
 Subcommands: heart-rate-zones, unit-preference, default-shoe. Run tempo settings <command> --help for each.
 
 All settings commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config). The CLI never calls PUT/POST under /settings/* (no updates, no recalculate).
+
+${HELP_GLOBALS_HINT}
+`,
+);
+
+const shoesCmd = program
+  .command("shoes")
+  .description("Read-only shoes commands (GET only).");
+
+shoesCmd
+  .command("list")
+  .description(
+    "GET /shoes — list shoes with calculated mileage (read-only; never creates, edits, or deletes).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo shoes list
+  tempo --output json shoes list
+
+This command only performs GET. It does not create shoes (no POST /shoes).
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo shoes list: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeShoesList(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        shoesListHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: SHOES_LIST_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: shoesListHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+shoesCmd
+  .command("mileage")
+  .description(
+    "GET /shoes/{id}/mileage — calculated total mileage for a shoe (read-only).",
+  )
+  .argument("<id>", "Shoe id (UUID)")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo shoes mileage 550e8400-e29b-41d4-a716-446655440000
+  tempo --output json shoes mileage 550e8400-e29b-41d4-a716-446655440000
+
+Returns 404 when the shoe id does not exist for the authenticated user.
+
+This command only performs GET. It does not edit (no PATCH /shoes/{id}) or delete (no DELETE /shoes/{id}) shoes.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command, id: string) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo shoes mileage: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const shoeId = trimWorkoutId(id);
+    if (!isValidWorkoutId(shoeId)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo shoes mileage: "${id}" is not a valid UUID`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeShoeMileage(merged.baseUrl, key, shoeId);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        shoeMileageHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildShoeMileagePath(shoeId),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: shoeMileageHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          shoeId,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+shoesCmd.addHelpText(
+  "after",
+  `
+Subcommands: list, mileage. Run tempo shoes <command> --help for each.
+
+All shoes commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config). The CLI never calls POST /shoes, PATCH /shoes/{id}, or DELETE /shoes/{id}. There is no GET /shoes/{id} in the API spec, so "tempo shoes get" is intentionally not provided; use "tempo shoes mileage <id>" for per-shoe data.
 
 ${HELP_GLOBALS_HINT}
 `,

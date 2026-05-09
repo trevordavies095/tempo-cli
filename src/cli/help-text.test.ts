@@ -228,4 +228,34 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("GET /settings/default-shoe");
     expect(out).toContain("no PUT");
   });
+
+  it("shoes --help lists subcommands, GET-only contract, and no shoes get", () => {
+    const out = helpFor(["shoes", "--help"]);
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("Subcommands:");
+    expect(out).toContain("list");
+    expect(out).toContain("mileage");
+    expect(out).toContain("POST /shoes");
+    expect(out).toContain("PATCH /shoes");
+    expect(out).toContain("DELETE /shoes");
+    expect(out).toContain("tempo shoes get");
+  });
+
+  it("shoes list --help documents path, GET-only, env, and globals", () => {
+    const out = helpFor(["shoes", "list", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("shoes list");
+    expect(out).toContain("GET /shoes");
+    expect(out).toContain("no POST");
+  });
+
+  it("shoes mileage --help documents path, UUID arg, env, and globals", () => {
+    const out = helpFor(["shoes", "mileage", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("shoes mileage");
+    expect(out).toContain("GET /shoes/{id}/mileage");
+    expect(out).toContain("UUID");
+  });
 });
