@@ -57,6 +57,13 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("workout get");
   });
 
+  it("workout similar-routes --help includes TEMPO_API_KEY and similar-routes", () => {
+    const out = helpFor(["workout", "similar-routes", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("similar-routes");
+  });
+
   it("version --help includes tempo version and tempo --help", () => {
     const out = helpFor(["version", "--help"]);
     expect(out).toContain("tempo version");

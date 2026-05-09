@@ -43,6 +43,13 @@ import {
   workoutGetHttpErrorMessageForCli,
 } from "./commands/workout-get.js";
 import {
+  buildWorkoutSimilarRoutesPath,
+  probeWorkoutSimilarRoutes,
+  similarRoutesQueryFromCli,
+  workoutSimilarRoutesHumanSuccessLine,
+  workoutSimilarRoutesHttpErrorMessageForCli,
+} from "./commands/workout-similar-routes.js";
+import {
   buildWorkoutsListPath,
   probeWorkoutsList,
   workoutsListHumanSuccessLine,
@@ -456,6 +463,110 @@ ${HELP_GLOBALS_HINT}
           result.body,
           key,
           workoutId,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+workoutCmd
+  .command("similar-routes")
+  .description(
+    "GET /workouts/{id}/similar-routes — past efforts on similar routes (workout needs route data).",
+  )
+  .argument("<id>", "Workout id (UUID)")
+  .option(
+    "--max-results <n>",
+    "Maximum matches to return (query: maxResults; API default 10)",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo workout similar-routes 550e8400-e29b-41d4-a716-446655440000
+  tempo workout similar-routes 550e8400-e29b-41d4-a716-446655440000 --max-results 5
+  tempo --output json workout similar-routes 550e8400-e29b-41d4-a716-446655440000
+
+Human mode summarizes JSON arrays (up to 20 rows) with id, name, startedAt, distance, duration when present.
+Use --output json for the full API body inside the standard wrapper on stdout.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command, id: string) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      maxResults?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo workout similar-routes: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const workoutId = trimWorkoutId(id);
+    if (!isValidWorkoutId(workoutId)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo workout similar-routes: "${id}" is not a valid UUID`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const parsed = similarRoutesQueryFromCli({
+      maxResults: merged.maxResults,
+    });
+    if ("error" in parsed) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: parsed.error,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeWorkoutSimilarRoutes(
+      merged.baseUrl,
+      key,
+      workoutId,
+      parsed.ok,
+    );
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        workoutSimilarRoutesHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildWorkoutSimilarRoutesPath(workoutId, parsed.ok),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: workoutSimilarRoutesHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          workoutId,
+          parsed.ok,
         ),
       });
       process.exit(exitCodeForHttpStatus(result.status));
