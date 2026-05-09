@@ -83,6 +83,8 @@ Shape matches the product doc: `error.code`, `error.message`, `error.request_id`
 
 **`tempo health`** and **`tempo server version`** use [`createHttpClient`](../../src/http/client.ts) with **only** `baseUrl` (no `api_key`), so **`Authorization`** is never sent for those commands. Implementations: [`health.ts`](../../src/commands/health.ts), [`server-version.ts`](../../src/commands/server-version.ts).
 
+For **`tempo auth me`**, non-success HTTP responses build stderr messages from the response body after [`redactApiKeyInText`](../../src/commands/auth-me.ts) so the configured API key is not repeated in **`error.message`** if the server echoes it.
+
 **Caveats:**
 
 - Commander may still print **human** text for invalid global options because `json` mode was never applied.

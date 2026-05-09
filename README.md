@@ -142,6 +142,8 @@ Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, *
 - **Missing API key:** exits **1** with **`MISSING_API_KEY`** on **stderr** (and JSON error shape when **`--output json`**).
 - **Failures:** Same [exit codes](#exit-codes) and stderr JSON conventions as **`tempo health`** for HTTP and transport errors.
 
+**Automation (`tempo auth me`):** for scripting, use **`--output json`** on **stderr** for failures. Exit **1** = missing API key (**`MISSING_API_KEY`**); **2** = **401** / **403**; **5** = network/transport (no HTTP response). Other HTTP statuses follow the global [exit codes](#exit-codes) table. CLI-built error messages **redact** your configured key if a rare server error body repeats it, so **`error.message`** is safer to log than raw response text.
+
 **`tempo version`** prints the **local** CLI version from the npm package. With **`--output human`** (default) it prints one line (`<name> <version>`). With **`--output json`** it prints a single JSON object on **stdout**, for example:
 
 ```json

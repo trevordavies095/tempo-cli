@@ -4,9 +4,12 @@ import {
   exitCodeForHttpStatus,
 } from "../exit/exits.js";
 import {
+  API_KEY_REDACTED,
   authMeHttpErrorMessage,
+  authMeHttpErrorMessageForCli,
   authMeHumanSuccessLine,
   probeAuthMe,
+  redactApiKeyInText,
 } from "./auth-me.js";
 
 const originalFetch = globalThis.fetch;
@@ -34,18 +37,22 @@ describe("probeAuthMe", () => {
     );
   });
 
-  it("error messages from server body do not echo our API key", async () => {
+  it("CLI HTTP error message redacts API key echoed by server body", async () => {
+    const body = `invalid token ${SECRET_KEY}`;
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(
-        new Response("Unauthorized", { status: 401 }),
-      ) as typeof fetch;
+      .mockResolvedValue(new Response(body, { status: 401 })) as typeof fetch;
 
     const result = await probeAuthMe("http://localhost:5001", SECRET_KEY);
     expect(result.kind).toBe("http");
     if (result.kind === "http") {
-      const msg = authMeHttpErrorMessage(result.status, result.body);
+      const msg = authMeHttpErrorMessageForCli(
+        result.status,
+        result.body,
+        SECRET_KEY,
+      );
       expect(msg).not.toContain(SECRET_KEY);
+      expect(msg).toContain(API_KEY_REDACTED);
       expect(msg).toContain("401");
     }
   });
@@ -105,5 +112,38 @@ describe("authMeHumanSuccessLine", () => {
 describe("authMeHttpErrorMessage", () => {
   it("includes path and status", () => {
     expect(authMeHttpErrorMessage(401, "")).toBe("GET /auth/me returned 401");
+  });
+});
+
+describe("redactApiKeyInText", () => {
+  it("returns unchanged when key is blank", () => {
+    expect(redactApiKeyInText("x", "")).toBe("x");
+    expect(redactApiKeyInText("x", "   ")).toBe("x");
+  });
+
+  it("replaces literal key and Bearer prefix form", () => {
+    const k = "tmp_abc123";
+    expect(redactApiKeyInText(`Bearer ${k}`, k)).toBe(`Bearer ${API_KEY_REDACTED}`);
+    expect(redactApiKeyInText(`echo ${k} done`, k)).toBe(
+      `echo ${API_KEY_REDACTED} done`,
+    );
+  });
+});
+
+describe("authMeHttpErrorMessageForCli", () => {
+  it("matches plain helper when body has no key", () => {
+    expect(authMeHttpErrorMessageForCli(400, "bad request", SECRET_KEY)).toBe(
+      authMeHttpErrorMessage(400, "bad request"),
+    );
+  });
+
+  it("redacts before truncating", () => {
+    const msg = authMeHttpErrorMessageForCli(
+      401,
+      `x${SECRET_KEY}y`,
+      SECRET_KEY,
+    );
+    expect(msg).not.toContain(SECRET_KEY);
+    expect(msg).toContain(API_KEY_REDACTED);
   });
 });

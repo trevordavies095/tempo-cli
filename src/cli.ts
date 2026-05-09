@@ -25,7 +25,7 @@ import {
 import {
   probeAuthMe,
   authMeHumanSuccessLine,
-  authMeHttpErrorMessage,
+  authMeHttpErrorMessageForCli,
   AUTH_ME_PATH,
 } from "./commands/auth-me.js";
 import {
@@ -306,7 +306,11 @@ authCmd
     if (result.kind === "http") {
       writeCommandError(merged.output, {
         code: CLI_ERROR_HTTP,
-        message: authMeHttpErrorMessage(result.status, result.body),
+        message: authMeHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
       });
       process.exit(exitCodeForHttpStatus(result.status));
     }

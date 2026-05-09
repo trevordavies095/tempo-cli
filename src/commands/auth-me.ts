@@ -3,6 +3,7 @@ import { createHttpClient } from "../http/client.js";
 export const AUTH_ME_PATH = "/auth/me";
 
 const BODY_SNIP_LEN = 500;
+export const API_KEY_REDACTED = "[REDACTED]";
 
 export type AuthMeOk = {
   kind: "ok";
@@ -29,6 +30,13 @@ function truncateForMessage(body: string): string {
   return `${t.slice(0, BODY_SNIP_LEN)}…`;
 }
 
+/** Removes literal API key substrings from text (e.g. server error bodies) before stderr. */
+export function redactApiKeyInText(text: string, apiKey: string): string {
+  const k = apiKey.trim();
+  if (!k || !text.includes(k)) return text;
+  return text.split(k).join(API_KEY_REDACTED);
+}
+
 /** GET /auth/me with Bearer apiKey (caller must pass non-empty key). */
 export async function probeAuthMe(
   baseUrl: string,
@@ -51,6 +59,15 @@ export function authMeHttpErrorMessage(status: number, body: string): string {
   const snip = truncateForMessage(body);
   const suffix = snip ? `: ${snip}` : "";
   return `GET ${AUTH_ME_PATH} returned ${status}${suffix}`;
+}
+
+/** Like {@link authMeHttpErrorMessage} but redacts `apiKey` in `body` before truncating (CLI stderr). */
+export function authMeHttpErrorMessageForCli(
+  status: number,
+  body: string,
+  apiKey: string,
+): string {
+  return authMeHttpErrorMessage(status, redactApiKeyInText(body, apiKey));
 }
 
 export function authMeHumanSuccessLine(status: number, body: string): string {
