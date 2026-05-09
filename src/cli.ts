@@ -43,6 +43,12 @@ import {
   workoutGetHttpErrorMessageForCli,
 } from "./commands/workout-get.js";
 import {
+  buildWorkoutMediaListPath,
+  probeWorkoutMediaList,
+  workoutMediaListHumanSuccessLine,
+  workoutMediaListHttpErrorMessageForCli,
+} from "./commands/workout-media-list.js";
+import {
   buildWorkoutSimilarRoutesPath,
   probeWorkoutSimilarRoutes,
   similarRoutesQueryFromCli,
@@ -567,6 +573,97 @@ ${HELP_GLOBALS_HINT}
           key,
           workoutId,
           parsed.ok,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+const workoutMediaCmd = workoutCmd
+  .command("media")
+  .description(
+    "Workout media (read-only list metadata here; file download is a separate subcommand).",
+  );
+
+workoutMediaCmd
+  .command("list")
+  .description(
+    "GET /workouts/{id}/media — list attachment metadata (read-only; no upload).",
+  )
+  .argument("<id>", "Workout id (UUID)")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo workout media list 550e8400-e29b-41d4-a716-446655440000
+  tempo workout media list 550e8400-e29b-41d4-a716-446655440000 --base-url https://tempo.example.com --api-key tmp_...
+  tempo --output json workout media list 550e8400-e29b-41d4-a716-446655440000
+
+This command only performs GET (lists metadata). It does not upload files (no POST).
+
+Human mode summarizes JSON arrays (up to 20 rows): id, filename, mime type, size, caption, createdAt when present.
+Use --output json for the full API body inside the standard wrapper on stdout.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command, id: string) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo workout media list: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const workoutId = trimWorkoutId(id);
+    if (!isValidWorkoutId(workoutId)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo workout media list: "${id}" is not a valid UUID`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeWorkoutMediaList(merged.baseUrl, key, workoutId);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        workoutMediaListHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildWorkoutMediaListPath(workoutId),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: workoutMediaListHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          workoutId,
         ),
       });
       process.exit(exitCodeForHttpStatus(result.status));
