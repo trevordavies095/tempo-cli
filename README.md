@@ -76,6 +76,8 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 
 ## Development
 
+**Contributor reference:** [CLI runtime](docs/contributing/cli-runtime.md) — environment variables, config path and precedence, streams, exit codes, JSON errors, and a source map (for onboarding without spelunking).
+
 - **Prerequisites:** Node.js 20 or newer (see `.nvmrc` for a suggested version).
 - **Install:** `npm install`
 - **Build:** `npm run build` (emits JavaScript to `dist/`)
@@ -135,6 +137,8 @@ Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, *
 Toolchain rationale (TypeScript on Node vs other options) is documented in [docs/adr/0001-use-typescript-node-for-cli.md](docs/adr/0001-use-typescript-node-for-cli.md).
 
 ## Contributing
+
+See [CLI runtime (contributor reference)](docs/contributing/cli-runtime.md) for env vars, config resolution, exit codes, JSON error shape, and links to implementing modules.
 
 Issues and pull requests for this repository should cover CLI behavior, packaging, and documentation. Changes to Tempo’s API, authentication, or OpenAPI publishing belong in the [Tempo](https://github.com/trevordavies095/tempo/) repository; link related work across repos when both sides change.
 
