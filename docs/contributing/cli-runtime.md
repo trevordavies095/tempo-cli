@@ -76,7 +76,7 @@ Shape matches the product doc: `error.code`, `error.message`, `error.request_id`
 | Code | Typical cause |
 |------|----------------|
 | `CONFIG_INVALID` | Invalid or unreadable config during initial load |
-| `MISSING_API_KEY` | No key from flag, env, or stdin for `config set-api-key` |
+| `MISSING_API_KEY` | No key from flag, env, or stdin for `config set-api-key`; or no key for `tempo auth me` |
 | `CONFIG_WRITE_FAILED` | Persisting the key to disk failed |
 | `HTTP_ERROR` | HTTP response with a non-success status (e.g. `tempo health` `GET /health` or `tempo server version` `GET /version` returned 4xx/5xx) |
 | `TRANSPORT` | `fetch` failed before a usable response (timeout, DNS, connection refused, etc.) |
@@ -90,7 +90,7 @@ Shape matches the product doc: `error.code`, `error.message`, `error.request_id`
 
 ## HTTP client (summary)
 
-Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DEFAULT_TIMEOUT_MS` (30_000 ms). Bearer header when `apiKey` is non-empty after trim; keys are never logged. Some commands (**`tempo health`**, **`tempo server version`**) intentionally omit `apiKey` so requests stay unauthenticated. TLS and proxy behavior follow Node’s `fetch` (Undici); details and env hints are in the README **Development** section.
+Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DEFAULT_TIMEOUT_MS` (30_000 ms). Bearer header when `apiKey` is non-empty after trim; keys are never logged. All GETs use **`credentials: "omit"`** so cookies are not sent. Some commands (**`tempo health`**, **`tempo server version`**) intentionally omit `apiKey` so requests stay unauthenticated; **`tempo auth me`** passes the merged key. TLS and proxy behavior follow Node’s `fetch` (Undici); details and env hints are in the README **Development** section.
 
 ## Source map
 
@@ -109,3 +109,4 @@ Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DE
 | HTTP GET client | [client.ts](../../src/http/client.ts) |
 | Health probe (`GET /health`) | [health.ts](../../src/commands/health.ts) |
 | Server version (`GET /version`) | [server-version.ts](../../src/commands/server-version.ts) |
+| Current user (`GET /auth/me`) | [auth-me.ts](../../src/commands/auth-me.ts) |

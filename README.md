@@ -117,7 +117,7 @@ When **`--output json`** and a command fails in a path the CLI controls (invalid
 
 Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/http/client.ts)) built on Node’s global **`fetch`**.
 
-- **Bearer auth:** Pass **`apiKey`** (for example from resolved CLI config, `TEMPO_API_KEY`, `--api-key`, or config file via [`getEffectiveGlobalConfig`](src/config/runtime.ts)). When the trimmed key is non-empty, every **`get()`** sends **`Authorization: Bearer …`**. If the key is missing or blank, that header is omitted. The HTTP client does **not** log or echo keys.
+- **Bearer auth:** Pass **`apiKey`** (for example from resolved CLI config, `TEMPO_API_KEY`, `--api-key`, or config file via [`getEffectiveGlobalConfig`](src/config/runtime.ts)). When the trimmed key is non-empty, every **`get()`** sends **`Authorization: Bearer …`**. If the key is missing or blank, that header is omitted. The HTTP client does **not** log or echo keys. Requests use **`credentials: "omit"`** so cookies are not sent (API key only).
 - **Default timeout:** **`30_000` ms** (`DEFAULT_TIMEOUT_MS`) per request unless overridden when creating the client.
 - **TLS:** HTTPS uses Node’s default CA trust store (same as other Node TLS). To add corporate roots, use **`NODE_EXTRA_CA_CERTS`** (see the [Node.js documentation](https://nodejs.org/api/cli.html#node_extra_ca_certsfile)).
 - **Proxy / `NO_PROXY`:** There is no custom proxy parser in the CLI. Behavior for **`HTTP_PROXY`**, **`HTTPS_PROXY`**, and **`NO_PROXY` / `no_proxy`** follows your **Node.js version’s `fetch` implementation** (Undici). Newer Node releases improve automatic proxy handling for `fetch`; upgrade Node if your environment requires it, and refer to [Undici](https://github.com/nodejs/undici) / Node release notes for details.
@@ -135,6 +135,12 @@ Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, *
 **`tempo server version`** calls **`GET /version`** on your configured base URL. Like **`tempo health`**, it does **not** send an API key, so it works when that route is public on your instance.
 
 - **Human / JSON / failures:** Same conventions as **`tempo health`**, but with **`path`**: **`"/version"`** in the success JSON (for example `{"ok":true,"status":200,"path":"/version","body":""}`).
+
+**`tempo auth me`** calls **`GET /auth/me`** with **`Authorization: Bearer`** using your merged API key (**`--api-key`**, **`TEMPO_API_KEY`**, or **`api_key`** in the config file). It only performs this GET (no cookies, no **`POST /auth/login`**).
+
+- **Human / JSON:** Same envelope as **`tempo health`**, with **`path`**: **`"/auth/me"`** in the success JSON.
+- **Missing API key:** exits **1** with **`MISSING_API_KEY`** on **stderr** (and JSON error shape when **`--output json`**).
+- **Failures:** Same [exit codes](#exit-codes) and stderr JSON conventions as **`tempo health`** for HTTP and transport errors.
 
 **`tempo version`** prints the **local** CLI version from the npm package. With **`--output human`** (default) it prints one line (`<name> <version>`). With **`--output json`** it prints a single JSON object on **stdout**, for example:
 

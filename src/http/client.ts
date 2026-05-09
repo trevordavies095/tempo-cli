@@ -59,6 +59,7 @@ export function createHttpClient(options: CreateHttpClientOptions): HttpClient {
         method: "GET",
         headers,
         signal,
+        credentials: "omit",
       });
     },
   };

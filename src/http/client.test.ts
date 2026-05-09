@@ -23,6 +23,7 @@ describe("createHttpClient", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:5001/version");
     expect(init.method).toBe("GET");
+    expect(init.credentials).toBe("omit");
     expect(init.signal).toBeInstanceOf(AbortSignal);
     const headers = new Headers(init.headers);
     expect(headers.has("Authorization")).toBe(false);

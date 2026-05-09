@@ -23,6 +23,12 @@ import {
   transportErrorMessage,
 } from "./commands/health.js";
 import {
+  probeAuthMe,
+  authMeHumanSuccessLine,
+  authMeHttpErrorMessage,
+  AUTH_ME_PATH,
+} from "./commands/auth-me.js";
+import {
   probeServerVersion,
   serverVersionHumanSuccessLine,
   serverVersionHttpErrorMessage,
@@ -244,6 +250,63 @@ serverCmd
       writeCommandError(merged.output, {
         code: CLI_ERROR_HTTP,
         message: serverVersionHttpErrorMessage(result.status, result.body),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+const authCmd = program
+  .command("auth")
+  .description("Authenticated API checks (read-only).");
+
+authCmd
+  .command("me")
+  .description(
+    "GET /auth/me with your API key (Bearer). Does not use cookies or POST /auth/login.",
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo auth me: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeAuthMe(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        authMeHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: AUTH_ME_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: authMeHttpErrorMessage(result.status, result.body),
       });
       process.exit(exitCodeForHttpStatus(result.status));
     }
