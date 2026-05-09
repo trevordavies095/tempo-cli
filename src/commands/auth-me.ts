@@ -1,4 +1,5 @@
 import { createHttpClient } from "../http/client.js";
+import { humanLinesFromApiBody } from "../output/human-api-body.js";
 
 export const AUTH_ME_PATH = "/auth/me";
 
@@ -71,7 +72,7 @@ export function authMeHttpErrorMessageForCli(
 }
 
 export function authMeHumanSuccessLine(status: number, body: string): string {
-  const trimmed = body.trim();
-  if (!trimmed) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${trimmed}`;
+  const block = humanLinesFromApiBody(body);
+  if (!block) return `OK (HTTP ${status})`;
+  return `OK (HTTP ${status})\n${block}`;
 }

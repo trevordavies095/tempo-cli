@@ -46,6 +46,8 @@ Most invocations load `config.toml` **before** Commander runs, so invalid TOML f
 | **stdout** | Successful command payloads—[writeOutLine](../../src/io/streams.ts), [writeCommandSuccess](../../src/output/success.ts). |
 | **stderr** | Errors, warnings, hints—[writeErrLine](../../src/io/streams.ts), [writeCommandError](../../src/output/error.ts) for failures. |
 
+**`tempo server version`** and **`tempo auth me`** (human mode): JSON **object** response bodies are summarized as sorted **`key: value`** lines via [humanLinesFromApiBody](../../src/output/human-api-body.ts) before the string passed to [writeCommandSuccess](../../src/output/success.ts); JSON output mode still uses the raw **`body`** field on the success object.
+
 ## Exit codes
 
 Defined in [src/exit/exits.ts](../../src/exit/exits.ts). HTTP-backed commands should use `exitCodeForHttpStatus` and `exitCodeForFetchFailure` when a response or transport failure is handled.
@@ -106,6 +108,7 @@ Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DE
 | Argv output peek, `version` detection | [argv-output-peek.ts](../../src/cli/argv-output-peek.ts) (`peekOutputModeFromArgv`, `isVersionInvocation`, `stripGlobalOptionsFromArgv`) |
 | Stdout / stderr | [streams.ts](../../src/io/streams.ts) |
 | Success JSON / human | [success.ts](../../src/output/success.ts) |
+| Human summary for JSON object API bodies (`server version`, `auth me`) | [human-api-body.ts](../../src/output/human-api-body.ts) (`humanLinesFromApiBody`) |
 | Error JSON / human | [error.ts](../../src/output/error.ts) |
 | Exit codes / HTTP mapping | [exits.ts](../../src/exit/exits.ts) |
 | HTTP GET client | [client.ts](../../src/http/client.ts) |

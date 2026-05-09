@@ -1,4 +1,5 @@
 import { createHttpClient } from "../http/client.js";
+import { humanLinesFromApiBody } from "../output/human-api-body.js";
 
 export const VERSION_PATH = "/version";
 
@@ -62,7 +63,7 @@ export function serverVersionHumanSuccessLine(
   status: number,
   body: string,
 ): string {
-  const trimmed = body.trim();
-  if (!trimmed) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${trimmed}`;
+  const block = humanLinesFromApiBody(body);
+  if (!block) return `OK (HTTP ${status})`;
+  return `OK (HTTP ${status})\n${block}`;
 }

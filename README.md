@@ -136,11 +136,13 @@ Subcommands such as **`tempo health`**, **`tempo server version`**, **`tempo aut
 
 **`tempo server version`** calls **`GET /version`** on your configured base URL. Like **`tempo health`**, it does **not** send an API key, so it works when that route is public on your instance.
 
-- **Human / JSON / failures:** Same conventions as **`tempo health`**, but with **`path`**: **`"/version"`** in the success JSON (for example `{"ok":true,"status":200,"path":"/version","body":""}`).
+- **Human (default):** after `OK (HTTP <status>)`, if the body is a JSON **object**, each field is one line as **`key: value`** (keys sorted alphabetically); nested values are shown as compact JSON. Non-object or non-JSON bodies print as plain text, like **`tempo health`**.
+- **JSON / failures:** Same conventions as **`tempo health`**, but with **`path`**: **`"/version"`** in the success JSON (for example `{"ok":true,"status":200,"path":"/version","body":""}`).
 
 **`tempo auth me`** calls **`GET /auth/me`** with **`Authorization: Bearer`** using your merged API key (**`--api-key`**, **`TEMPO_API_KEY`**, or **`api_key`** in the config file). It only performs this GET (no cookies, no **`POST /auth/login`**).
 
-- **Human / JSON:** Same envelope as **`tempo health`**, with **`path`**: **`"/auth/me"`** in the success JSON.
+- **Human (default):** same JSON-object **key: value** summary rules as **`tempo server version`**; **`--output json`** still returns the full **`body`** string in the success object.
+- **JSON:** Same envelope as **`tempo health`**, with **`path`**: **`"/auth/me"`** in the success JSON.
 - **Missing API key:** exits **1** with **`MISSING_API_KEY`** on **stderr** (and JSON error shape when **`--output json`**).
 - **Failures:** Same [exit codes](#exit-codes) and stderr JSON conventions as **`tempo health`** for HTTP and transport errors.
 

@@ -95,8 +95,14 @@ describe("serverVersionHumanSuccessLine", () => {
     expect(serverVersionHumanSuccessLine(200, "")).toBe("OK (HTTP 200)");
   });
 
-  it("appends trimmed body", () => {
+  it("appends trimmed body for non-object responses", () => {
     expect(serverVersionHumanSuccessLine(200, "v1")).toBe("OK (HTTP 200)\nv1");
+  });
+
+  it("formats JSON object bodies as sorted key lines", () => {
+    expect(
+      serverVersionHumanSuccessLine(200, '{"version":"1.0","commit":"abc"}'),
+    ).toBe("OK (HTTP 200)\ncommit: abc\nversion: 1.0");
   });
 });
 

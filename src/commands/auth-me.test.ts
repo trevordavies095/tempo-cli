@@ -103,9 +103,18 @@ describe("probeAuthMe", () => {
 });
 
 describe("authMeHumanSuccessLine", () => {
-  it("matches health-style output", () => {
+  it("matches plain text for non-object bodies", () => {
     expect(authMeHumanSuccessLine(200, "")).toBe("OK (HTTP 200)");
     expect(authMeHumanSuccessLine(200, "x")).toBe("OK (HTTP 200)\nx");
+  });
+
+  it("formats JSON object bodies as sorted key lines", () => {
+    expect(
+      authMeHumanSuccessLine(
+        200,
+        JSON.stringify({ email: "a@b.co", id: "u1" }),
+      ),
+    ).toBe("OK (HTTP 200)\nemail: a@b.co\nid: u1");
   });
 });
 
