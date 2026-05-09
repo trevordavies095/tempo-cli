@@ -1,5 +1,12 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  displayCell,
+  formatCappedArrayLines,
+  HUMAN_GENERIC_ROW_CAP,
+  isPlainObject,
+  pickFirst,
+} from "../output/human-summary.js";
 import { redactApiKeyInText } from "./auth-me.js";
 
 export const STATS_AVAILABLE_YEARS_PATH = "/stats/available-years";
@@ -72,11 +79,68 @@ export function statsAvailableYearsHttpErrorMessageForCli(
   );
 }
 
+function isScalar(v: unknown): v is string | number | boolean {
+  return (
+    typeof v === "string" || typeof v === "number" || typeof v === "boolean"
+  );
+}
+
+function compactYearRow(item: unknown): string {
+  if (!isPlainObject(item)) return displayCell(item);
+  const year = pickFirst(item, ["year", "Year"]);
+  const distance = pickFirst(item, ["distance", "Distance", "miles", "Miles"]);
+  const count = pickFirst(item, ["count", "Count", "workouts", "Workouts"]);
+  const bits: string[] = [];
+  if (year !== undefined) bits.push(displayCell(year));
+  if (distance !== undefined) bits.push(`distance=${displayCell(distance)}`);
+  if (count !== undefined) bits.push(`count=${displayCell(count)}`);
+  return bits.length > 0 ? bits.join(" | ") : JSON.stringify(item);
+}
+
 export function statsAvailableYearsHumanSuccessLine(
   status: number,
   body: string,
 ): string {
+  const header = `OK (HTTP ${status})`;
+  const trimmed = body.trim();
+  if (!trimmed) return header;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      if (parsed.length > 0 && parsed.every(isScalar)) {
+        const shown = parsed.slice(0, HUMAN_GENERIC_ROW_CAP);
+        const rest = parsed.length - shown.length;
+        const list = shown.map(displayCell).join(", ");
+        const tail = rest > 0 ? ` (… and ${rest} more)` : "";
+        return `${header}\nYears: ${list}${tail}`;
+      }
+      const lines = [
+        header,
+        ...formatCappedArrayLines(parsed, "year(s)", compactYearRow),
+      ];
+      return lines.join("\n");
+    }
+    if (isPlainObject(parsed)) {
+      const years = pickFirst(parsed, ["years", "Years", "items", "Items"]);
+      if (Array.isArray(years)) {
+        if (years.length > 0 && years.every(isScalar)) {
+          const shown = years.slice(0, HUMAN_GENERIC_ROW_CAP);
+          const rest = years.length - shown.length;
+          const list = shown.map(displayCell).join(", ");
+          const tail = rest > 0 ? ` (… and ${rest} more)` : "";
+          return `${header}\nYears: ${list}${tail}`;
+        }
+        const lines = [
+          header,
+          ...formatCappedArrayLines(years, "year(s)", compactYearRow),
+        ];
+        return lines.join("\n");
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const block = humanLinesFromApiBody(body);
-  if (!block) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${block}`;
+  if (!block) return header;
+  return `${header}\n${block}`;
 }

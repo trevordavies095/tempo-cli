@@ -108,7 +108,36 @@ describe("probeSettingsHeartRateZones", () => {
 });
 
 describe("settingsHeartRateZonesHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("formats an array of zones with min-max bpm and name", () => {
+    const body = JSON.stringify([
+      { zone: 1, minBpm: 90, maxBpm: 119, name: "Easy" },
+      { zone: 2, minBpm: 120, maxBpm: 139 },
+    ]);
+    expect(settingsHeartRateZonesHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "2 zone(s)",
+        "1. zone=1 | 90-119 bpm | Easy",
+        "2. zone=2 | 120-139 bpm",
+      ].join("\n"),
+    );
+  });
+
+  it("renders an inner zones array on objects", () => {
+    const body = JSON.stringify({
+      zones: [{ zone: 1, minBpm: 90, maxBpm: 119 }],
+      method: "AgeBased",
+    });
+    expect(settingsHeartRateZonesHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "1 zone(s)",
+        "1. zone=1 | 90-119 bpm",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
     const body = JSON.stringify({ method: "AgeBased", maxHr: 190 });
     expect(settingsHeartRateZonesHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\nmaxHr: 190\nmethod: AgeBased",

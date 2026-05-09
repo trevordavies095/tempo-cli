@@ -1,5 +1,10 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  formatFieldLines,
+  isPlainObject,
+  pickFirst,
+} from "../output/human-summary.js";
 import { redactApiKeyInText } from "./auth-me.js";
 
 export const STATS_RELATIVE_EFFORT_PATH = "/stats/relative-effort";
@@ -97,13 +102,44 @@ export function statsRelativeEffortHttpErrorMessageForCli(
   );
 }
 
+const RELATIVE_EFFORT_FIELD_SPECS = [
+  ["cumulative", "cumulative", "Cumulative", "cumulativeEffort", "CumulativeEffort"],
+  [
+    "threeWeekAverage",
+    "threeWeekAverage",
+    "ThreeWeekAverage",
+    "threeWeekAvg",
+    "ThreeWeekAvg",
+  ],
+  ["currentWeek", "currentWeek", "CurrentWeek"],
+  ["previousWeek", "previousWeek", "PreviousWeek"],
+] as const;
+
 export function statsRelativeEffortHumanSuccessLine(
   status: number,
   body: string,
 ): string {
+  const header = `OK (HTTP ${status})`;
+  const trimmed = body.trim();
+  if (!trimmed) return header;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (isPlainObject(parsed)) {
+      const lines = formatFieldLines(parsed, RELATIVE_EFFORT_FIELD_SPECS);
+      const weeks = pickFirst(parsed, ["weeks", "Weeks"]);
+      if (Array.isArray(weeks)) {
+        lines.push(`weeks: ${weeks.length}`);
+      }
+      if (lines.length > 0) {
+        return `${header}\n${lines.join("\n")}`;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const block = humanLinesFromApiBody(body);
-  if (!block) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${block}`;
+  if (!block) return header;
+  return `${header}\n${block}`;
 }
 
 export type StatsRelativeEffortCliRawOpts = {

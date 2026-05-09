@@ -165,7 +165,49 @@ describe("probeStatsAvailablePeriods", () => {
 });
 
 describe("statsAvailablePeriodsHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("formats an array of periods with start → end rows", () => {
+    const body = JSON.stringify([
+      { startDate: "2024-01-01", endDate: "2024-12-31" },
+      { startDate: "2023-01-01", endDate: "2023-12-31" },
+    ]);
+    expect(statsAvailablePeriodsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "2 period(s)",
+        "1. 2024-01-01 → 2024-12-31",
+        "2. 2023-01-01 → 2023-12-31",
+      ].join("\n"),
+    );
+  });
+
+  it("renders an inner periods array on objects", () => {
+    const body = JSON.stringify({
+      periods: [{ start: "2024-01-01", end: "2024-12-31" }],
+    });
+    expect(statsAvailablePeriodsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "1 period(s)",
+        "1. 2024-01-01 → 2024-12-31",
+      ].join("\n"),
+    );
+  });
+
+  it("caps rows at 20 and reports remainder", () => {
+    const rows = Array.from({ length: 22 }, (_, i) => ({
+      startDate: `${2025 - i}-01-01`,
+      endDate: `${2025 - i}-12-31`,
+    }));
+    const out = statsAvailablePeriodsHumanSuccessLine(
+      200,
+      JSON.stringify(rows),
+    );
+    expect(out).toContain("22 period(s)");
+    expect(out).toContain("… and 2 more");
+    expect(out.split("\n").filter((l) => /^\d+\./.test(l))).toHaveLength(20);
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
     const body = JSON.stringify({ count: 3, oldest: "2022-01-01" });
     expect(statsAvailablePeriodsHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\ncount: 3\noldest: 2022-01-01",

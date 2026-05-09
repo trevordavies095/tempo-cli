@@ -147,10 +147,38 @@ describe("probeStatsYearly", () => {
 });
 
 describe("statsYearlyHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
-    const body = JSON.stringify({ currentYearMiles: 250, previousYearMiles: 312 });
+  it("prints ordered current/previous year lines when present", () => {
+    const body = JSON.stringify({
+      currentYear: { year: 2025, distance: 250 },
+      previousYear: { year: 2024, distance: 312 },
+    });
     expect(statsYearlyHumanSuccessLine(200, body)).toBe(
-      "OK (HTTP 200)\ncurrentYearMiles: 250\npreviousYearMiles: 312",
+      [
+        "OK (HTTP 200)",
+        'currentYear: {"year":2025,"distance":250}',
+        'previousYear: {"year":2024,"distance":312}',
+      ].join("\n"),
+    );
+  });
+
+  it("supports flat numeric keys like currentYearMiles", () => {
+    const body = JSON.stringify({
+      currentYearMiles: 250,
+      previousYearMiles: 312,
+    });
+    expect(statsYearlyHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "currentYearMiles: 250",
+        "previousYearMiles: 312",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
+    const body = JSON.stringify({ foo: 1, bar: 2 });
+    expect(statsYearlyHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\nbar: 2\nfoo: 1",
     );
   });
 

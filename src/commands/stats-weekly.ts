@@ -1,5 +1,11 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  displayCell,
+  formatCappedArrayLines,
+  isPlainObject,
+  pickFirst,
+} from "../output/human-summary.js";
 import { redactApiKeyInText } from "./auth-me.js";
 
 export const STATS_WEEKLY_PATH = "/stats/weekly";
@@ -93,13 +99,59 @@ export function statsWeeklyHttpErrorMessageForCli(
   );
 }
 
+function compactDayRow(item: unknown): string {
+  if (!isPlainObject(item)) return displayCell(item);
+  const bits: string[] = [];
+  const date = pickFirst(item, ["date", "Date", "day", "Day"]);
+  if (date !== undefined) bits.push(displayCell(date));
+  const distance = pickFirst(item, [
+    "distance",
+    "Distance",
+    "miles",
+    "Miles",
+    "meters",
+    "Meters",
+  ]);
+  if (distance !== undefined) bits.push(`distance=${displayCell(distance)}`);
+  const duration = pickFirst(item, ["duration", "Duration", "seconds", "Seconds"]);
+  if (duration !== undefined) bits.push(`duration=${displayCell(duration)}`);
+  const count = pickFirst(item, ["count", "Count", "workouts", "Workouts"]);
+  if (count !== undefined) bits.push(`count=${displayCell(count)}`);
+  return bits.length > 0 ? bits.join(" | ") : JSON.stringify(item);
+}
+
 export function statsWeeklyHumanSuccessLine(
   status: number,
   body: string,
 ): string {
+  const header = `OK (HTTP ${status})`;
+  const trimmed = body.trim();
+  if (!trimmed) return header;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      const lines = [
+        header,
+        ...formatCappedArrayLines(parsed, "day(s)", compactDayRow),
+      ];
+      return lines.join("\n");
+    }
+    if (isPlainObject(parsed)) {
+      const days = pickFirst(parsed, ["days", "Days", "items", "Items"]);
+      if (Array.isArray(days)) {
+        const lines = [
+          header,
+          ...formatCappedArrayLines(days, "day(s)", compactDayRow),
+        ];
+        return lines.join("\n");
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const block = humanLinesFromApiBody(body);
-  if (!block) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${block}`;
+  if (!block) return header;
+  return `${header}\n${block}`;
 }
 
 export type StatsWeeklyCliRawOpts = {

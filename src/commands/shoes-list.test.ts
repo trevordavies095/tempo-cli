@@ -93,17 +93,59 @@ describe("probeShoesList", () => {
 });
 
 describe("shoesListHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
-    const body = JSON.stringify({ count: 2, default: "Pegasus" });
+  it("formats an array of shoes with id, name, brand, model, mileage", () => {
+    const body = JSON.stringify([
+      {
+        id: "11111111-2222-4333-8444-555555555555",
+        name: "Daily trainer",
+        brand: "Nike",
+        model: "Pegasus",
+        mileage: 234.5,
+      },
+      { id: "shoe-2", name: "Race day" },
+    ]);
     expect(shoesListHumanSuccessLine(200, body)).toBe(
-      "OK (HTTP 200)\ncount: 2\ndefault: Pegasus",
+      [
+        "OK (HTTP 200)",
+        "2 shoe(s)",
+        "1. 11111111-2222-4333-8444-555555555555 | Daily trainer | brand=Nike | model=Pegasus | mileage=234.5",
+        "2. shoe-2 | Race day",
+      ].join("\n"),
     );
   });
 
-  it("falls back to raw text for JSON arrays (richer rendering deferred to P5)", () => {
-    const body = JSON.stringify([{ id: "shoe-1" }]);
+  it("renders an inner shoes array on objects", () => {
+    const body = JSON.stringify({
+      shoes: [{ id: "shoe-1", name: "Daily trainer" }],
+      total: 1,
+    });
     expect(shoesListHumanSuccessLine(200, body)).toBe(
-      `OK (HTTP 200)\n${body}`,
+      [
+        "OK (HTTP 200)",
+        "1 shoe(s)",
+        "1. shoe-1 | Daily trainer",
+      ].join("\n"),
+    );
+  });
+
+  it("emits `0 shoe(s)` for an empty array", () => {
+    expect(shoesListHumanSuccessLine(200, "[]")).toBe(
+      "OK (HTTP 200)\n0 shoe(s)",
+    );
+  });
+
+  it("caps rows at 20 and reports remainder", () => {
+    const rows = Array.from({ length: 22 }, (_, i) => ({ id: `shoe-${i}` }));
+    const out = shoesListHumanSuccessLine(200, JSON.stringify(rows));
+    expect(out).toContain("22 shoe(s)");
+    expect(out).toContain("… and 2 more");
+    expect(out.split("\n").filter((l) => /^\d+\./.test(l))).toHaveLength(20);
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
+    const body = JSON.stringify({ count: 2, default: "Pegasus" });
+    expect(shoesListHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\ncount: 2\ndefault: Pegasus",
     );
   });
 

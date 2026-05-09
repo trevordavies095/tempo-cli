@@ -76,6 +76,24 @@ Global flags mirror these where useful (`--base-url`, `--api-key`, `--output`).
 
 With **`--output human`** (the default), workout read commands print **compact tables**: fixed columns and a row cap so large lists stay readable. That applies to **`tempo workouts list`**, **`tempo workout get`**, **`tempo workout similar-routes`**, and **`tempo workout media list`**. Use **`--output json`** when you need the **full API payload** in the usual JSON success wrapper on stdout. **`tempo workout media download`** still streams raw bytes; see **`--help`** for that command.
 
+### Human vs JSON (stats, settings, shoes)
+
+With **`--output human`** (the default), the read-only **`tempo stats …`**, **`tempo settings …`**, and **`tempo shoes …`** commands print a short summary tailored to the response shape so terminal output stays readable for large payloads. With **`--output json`**, every command writes the **full API body unchanged** inside the standard success envelope on stdout (`{"ok":true,"status":200,"path":"/…","body":"…"}`); switching to JSON never alters the API field names. Each command's `--help` lists the path it calls.
+
+Defensive layouts (camelCase first, PascalCase as a fallback; rows capped at **20** with a `… and N more` tail; unknown shapes drop through to a sorted **`key: value`** rendering of the JSON):
+
+- **`tempo stats weekly`** — array of days → `<n> day(s)` followed by numbered rows `<date|day> | distance=<x> | duration=<y> | count=<n>` (skipping absent fields). Objects with an inner `days` / `items` array render the same rows.
+- **`tempo stats yearly`** — object → ordered lines `currentYear: …`, `previousYear: …`, `currentYearMiles: …`, `previousYearMiles: …`, `totalDistance: …` (whichever fields the response actually has).
+- **`tempo stats yearly-weekly`** — array of 52 week buckets → `<n> week(s)` plus capped rows `<weekStart> | distance=<x> | count=<n>`.
+- **`tempo stats relative-effort`** — object → ordered lines `cumulative: …`, `threeWeekAverage: …`, `currentWeek: …`, `previousWeek: …`, with a final `weeks: <n>` count when the response includes a `weeks` array.
+- **`tempo stats best-efforts`** — object map keyed by distance → one `<distance>: <time>` line per entry, sorted alphabetically; array variants render as numbered `<distance> | time=<value>` rows.
+- **`tempo stats available-periods`** — array → `<n> period(s)` plus capped rows `<startDate> → <endDate>`.
+- **`tempo stats available-years`** — array of primitives → single line `Years: 2025, 2024, …` (cap 20 with `(… and N more)`); arrays of `{year, …}` objects render as numbered `<year> | distance=<x> | count=<n>` rows.
+- **`tempo stats insights`** — object → sorted scalar fields rendered as `key: value`; nested arrays appear as `key: <n> item(s)`; nested objects render as compact JSON.
+- **`tempo settings heart-rate-zones`** — array of zones → `<n> zone(s)` plus rows `zone=<n> | <minBpm>-<maxBpm> bpm | <name>` (any missing field is skipped).
+- **`tempo shoes list`** — array of shoes → `<n> shoe(s)` plus rows `<id> | <name> | brand=<b> | model=<m> | mileage=<v>` (cap 20). Empty arrays still print `0 shoe(s)`.
+- **`tempo settings unit-preference`**, **`tempo settings default-shoe`**, **`tempo shoes mileage`** — small payloads keep the generic sorted **`key: value`** rendering after the `OK (HTTP <status>)` header.
+
 ## API contract
 
 A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_spec.json) for tests and client generation. When Tempo publishes a canonical spec from its mainline branches, this repo should track that for compatibility notes and codegen.

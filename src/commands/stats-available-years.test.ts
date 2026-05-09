@@ -108,7 +108,46 @@ describe("probeStatsAvailableYears", () => {
 });
 
 describe("statsAvailableYearsHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("formats an array of primitive years as a single line", () => {
+    const body = JSON.stringify([2025, 2024, 2023]);
+    expect(statsAvailableYearsHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\nYears: 2025, 2024, 2023",
+    );
+  });
+
+  it("appends `… and N more` when the year list exceeds the cap", () => {
+    const years = Array.from({ length: 22 }, (_, i) => 2025 - i);
+    const out = statsAvailableYearsHumanSuccessLine(
+      200,
+      JSON.stringify(years),
+    );
+    expect(out.startsWith("OK (HTTP 200)\nYears: 2025, ")).toBe(true);
+    expect(out).toContain("(… and 2 more)");
+  });
+
+  it("formats arrays of year objects with numbered rows", () => {
+    const body = JSON.stringify([
+      { year: 2025, distance: 1200 },
+      { year: 2024, distance: 950 },
+    ]);
+    expect(statsAvailableYearsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "2 year(s)",
+        "1. 2025 | distance=1200",
+        "2. 2024 | distance=950",
+      ].join("\n"),
+    );
+  });
+
+  it("renders an inner years array on objects", () => {
+    const body = JSON.stringify({ years: [2025, 2024] });
+    expect(statsAvailableYearsHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\nYears: 2025, 2024",
+    );
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
     const body = JSON.stringify({ count: 4, latest: 2025 });
     expect(statsAvailableYearsHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\ncount: 4\nlatest: 2025",

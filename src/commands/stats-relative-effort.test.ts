@@ -166,10 +166,39 @@ describe("probeStatsRelativeEffort", () => {
 });
 
 describe("statsRelativeEffortHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
-    const body = JSON.stringify({ currentWeek: 12, threeWeekAvg: 10.5 });
+  it("prints ordered top-level fields and a weeks count", () => {
+    const body = JSON.stringify({
+      cumulative: 1234,
+      threeWeekAverage: 410,
+      currentWeek: 90,
+      weeks: [{}, {}, {}],
+    });
     expect(statsRelativeEffortHumanSuccessLine(200, body)).toBe(
-      "OK (HTTP 200)\ncurrentWeek: 12\nthreeWeekAvg: 10.5",
+      [
+        "OK (HTTP 200)",
+        "cumulative: 1234",
+        "threeWeekAverage: 410",
+        "currentWeek: 90",
+        "weeks: 3",
+      ].join("\n"),
+    );
+  });
+
+  it("supports threeWeekAvg as a fallback alias", () => {
+    const body = JSON.stringify({ cumulative: 1, threeWeekAvg: 2 });
+    expect(statsRelativeEffortHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "cumulative: 1",
+        "threeWeekAverage: 2",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
+    const body = JSON.stringify({ foo: 1, bar: 2 });
+    expect(statsRelativeEffortHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\nbar: 2\nfoo: 1",
     );
   });
 

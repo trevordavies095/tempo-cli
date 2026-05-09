@@ -157,10 +157,43 @@ describe("probeStatsWeekly", () => {
 });
 
 describe("statsWeeklyHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
-    const body = JSON.stringify({ totalMiles: 12.5, days: 4 });
+  it("formats a 7-day array with numbered rows", () => {
+    const body = JSON.stringify([
+      { date: "2025-01-06", distance: 5000, duration: 1800 },
+      { date: "2025-01-07", distance: 0 },
+    ]);
     expect(statsWeeklyHumanSuccessLine(200, body)).toBe(
-      "OK (HTTP 200)\ndays: 4\ntotalMiles: 12.5",
+      [
+        "OK (HTTP 200)",
+        "2 day(s)",
+        "1. 2025-01-06 | distance=5000 | duration=1800",
+        "2. 2025-01-07 | distance=0",
+      ].join("\n"),
+    );
+  });
+
+  it("renders an inner days array on objects", () => {
+    const body = JSON.stringify({
+      days: [{ day: "Mon", distance: 5000 }],
+      totalMiles: 12.5,
+    });
+    expect(statsWeeklyHumanSuccessLine(200, body)).toBe(
+      ["OK (HTTP 200)", "1 day(s)", "1. Mon | distance=5000"].join("\n"),
+    );
+  });
+
+  it("caps rows at 20 and reports remainder", () => {
+    const rows = Array.from({ length: 22 }, (_, i) => ({ date: `d${i}` }));
+    const out = statsWeeklyHumanSuccessLine(200, JSON.stringify(rows));
+    expect(out).toContain("22 day(s)");
+    expect(out).toContain("… and 2 more");
+    expect(out.split("\n").filter((l) => /^\d+\./.test(l))).toHaveLength(20);
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
+    const body = JSON.stringify({ totalMiles: 12.5, weeks: 4 });
+    expect(statsWeeklyHumanSuccessLine(200, body)).toBe(
+      "OK (HTTP 200)\ntotalMiles: 12.5\nweeks: 4",
     );
   });
 

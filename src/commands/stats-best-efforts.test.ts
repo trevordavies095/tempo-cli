@@ -108,7 +108,36 @@ describe("probeStatsBestEfforts", () => {
 });
 
 describe("statsBestEffortsHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("renders distance → time lines for an object map of efforts", () => {
+    const body = JSON.stringify({
+      "10K": { time: "00:42:00", workoutId: "w1" },
+      "5K": { duration: "00:20:30" },
+    });
+    expect(statsBestEffortsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "10K: 00:42:00",
+        "5K: 00:20:30",
+      ].join("\n"),
+    );
+  });
+
+  it("formats arrays of effort objects with numbered rows", () => {
+    const body = JSON.stringify([
+      { distance: "5K", time: "00:20:30" },
+      { distance: "10K", duration: "00:42:00" },
+    ]);
+    expect(statsBestEffortsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "2 effort(s)",
+        "1. 5K | time=00:20:30",
+        "2. 10K | time=00:42:00",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to sorted key: value lines for scalar-valued objects", () => {
     const body = JSON.stringify({ marathon: "3:10:00", tenK: "00:42:00" });
     expect(statsBestEffortsHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\nmarathon: 3:10:00\ntenK: 00:42:00",

@@ -1,5 +1,11 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  displayCell,
+  formatCappedArrayLines,
+  isPlainObject,
+  pickFirst,
+} from "../output/human-summary.js";
 import { redactApiKeyInText } from "./auth-me.js";
 
 export const STATS_AVAILABLE_PERIODS_PATH = "/stats/available-periods";
@@ -97,13 +103,69 @@ export function statsAvailablePeriodsHttpErrorMessageForCli(
   );
 }
 
+function compactPeriodRow(item: unknown): string {
+  if (!isPlainObject(item)) return displayCell(item);
+  const start = pickFirst(item, [
+    "startDate",
+    "StartDate",
+    "start",
+    "Start",
+    "from",
+    "From",
+  ]);
+  const end = pickFirst(item, [
+    "endDate",
+    "EndDate",
+    "end",
+    "End",
+    "to",
+    "To",
+  ]);
+  if (start !== undefined && end !== undefined) {
+    return `${displayCell(start)} → ${displayCell(end)}`;
+  }
+  if (start !== undefined) return displayCell(start);
+  if (end !== undefined) return displayCell(end);
+  return JSON.stringify(item);
+}
+
 export function statsAvailablePeriodsHumanSuccessLine(
   status: number,
   body: string,
 ): string {
+  const header = `OK (HTTP ${status})`;
+  const trimmed = body.trim();
+  if (!trimmed) return header;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      const lines = [
+        header,
+        ...formatCappedArrayLines(parsed, "period(s)", compactPeriodRow),
+      ];
+      return lines.join("\n");
+    }
+    if (isPlainObject(parsed)) {
+      const periods = pickFirst(parsed, [
+        "periods",
+        "Periods",
+        "items",
+        "Items",
+      ]);
+      if (Array.isArray(periods)) {
+        const lines = [
+          header,
+          ...formatCappedArrayLines(periods, "period(s)", compactPeriodRow),
+        ];
+        return lines.join("\n");
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const block = humanLinesFromApiBody(body);
-  if (!block) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${block}`;
+  if (!block) return header;
+  return `${header}\n${block}`;
 }
 
 export type StatsAvailablePeriodsCliRawOpts = {

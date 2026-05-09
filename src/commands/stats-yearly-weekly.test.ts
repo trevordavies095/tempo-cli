@@ -183,7 +183,45 @@ describe("probeStatsYearlyWeekly", () => {
 });
 
 describe("statsYearlyWeeklyHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("formats an array of weeks with numbered rows", () => {
+    const body = JSON.stringify([
+      { weekStart: "2025-01-06", distance: 12000, count: 4 },
+      { weekStart: "2025-01-13", distance: 8000 },
+    ]);
+    expect(statsYearlyWeeklyHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "2 week(s)",
+        "1. 2025-01-06 | distance=12000 | count=4",
+        "2. 2025-01-13 | distance=8000",
+      ].join("\n"),
+    );
+  });
+
+  it("renders an inner weeks array on objects", () => {
+    const body = JSON.stringify({
+      weeks: [{ weekStart: "2025-01-06", distance: 12000 }],
+    });
+    expect(statsYearlyWeeklyHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "1 week(s)",
+        "1. 2025-01-06 | distance=12000",
+      ].join("\n"),
+    );
+  });
+
+  it("caps rows at 20 and reports remainder for a 52-week year", () => {
+    const rows = Array.from({ length: 52 }, (_, i) => ({
+      weekStart: `2025-w${i}`,
+    }));
+    const out = statsYearlyWeeklyHumanSuccessLine(200, JSON.stringify(rows));
+    expect(out).toContain("52 week(s)");
+    expect(out).toContain("… and 32 more");
+    expect(out.split("\n").filter((l) => /^\d+\./.test(l))).toHaveLength(20);
+  });
+
+  it("falls back to sorted key: value lines for unrecognized JSON object", () => {
     const body = JSON.stringify({ buckets: 52, totalMiles: 312.4 });
     expect(statsYearlyWeeklyHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\nbuckets: 52\ntotalMiles: 312.4",

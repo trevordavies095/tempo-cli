@@ -105,7 +105,25 @@ describe("probeStatsInsights", () => {
 });
 
 describe("statsInsightsHumanSuccessLine", () => {
-  it("renders sorted key: value lines for JSON object", () => {
+  it("renders sorted scalars and counts arrays/objects for nested values", () => {
+    const body = JSON.stringify({
+      workouts: 12,
+      weeksCovered: 4,
+      insights: [{ type: "a" }, { type: "b" }],
+      coverage: { since: "2024-01-01" },
+    });
+    expect(statsInsightsHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        'coverage: {"since":"2024-01-01"}',
+        "insights: 2 item(s)",
+        "weeksCovered: 4",
+        "workouts: 12",
+      ].join("\n"),
+    );
+  });
+
+  it("renders a flat scalar object", () => {
     const body = JSON.stringify({ workouts: 12, weeksCovered: 4 });
     expect(statsInsightsHumanSuccessLine(200, body)).toBe(
       "OK (HTTP 200)\nweeksCovered: 4\nworkouts: 12",
