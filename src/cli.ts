@@ -43,6 +43,11 @@ import {
   workoutGetHttpErrorMessageForCli,
 } from "./commands/workout-get.js";
 import {
+  atomicWriteFile,
+  probeWorkoutMediaDownload,
+  workoutMediaDownloadHttpErrorMessageForCli,
+} from "./commands/workout-media-download.js";
+import {
   buildWorkoutMediaListPath,
   probeWorkoutMediaList,
   workoutMediaListHumanSuccessLine,
@@ -587,7 +592,7 @@ ${HELP_GLOBALS_HINT}
 const workoutMediaCmd = workoutCmd
   .command("media")
   .description(
-    "Workout media (read-only list metadata here; file download is a separate subcommand).",
+    "Workout media: list attachment metadata or download a file (GET only).",
   );
 
 workoutMediaCmd
@@ -664,6 +669,132 @@ ${HELP_GLOBALS_HINT}
           result.body,
           key,
           workoutId,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+workoutMediaCmd
+  .command("download")
+  .description(
+    "GET /workouts/{id}/media/{mediaId} — download media bytes (supports range requests on the server).",
+  )
+  .argument("<workoutId>", "Workout id (UUID)")
+  .argument("<mediaId>", "Media attachment id (UUID)")
+  .option(
+    "-o, --out-file <path>",
+    "Write the response body to this path (atomic replace). Defaults to binary on stdout.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  tempo workout media download 550e8400-e29b-41d4-a716-446655440000 f47ac10b-58cc-4372-a567-0e02b2c3d479 > photo.jpg
+  tempo workout media download 550e8400-e29b-41d4-a716-446655440000 f47ac10b-58cc-4372-a567-0e02b2c3d479 -o photo.jpg
+  TEMPO_API_KEY=tmp_... tempo workout media download --base-url https://tempo.example.com W1 M1 --out-file ./video.mp4
+
+Successful downloads write raw bytes to stdout unless --out-file / -o is set (no JSON wrapper on stdout).
+
+Global --output human|json applies to error messages on stderr only (structured JSON on failure when --output json).
+
+Writing binary to an interactive terminal can corrupt the display; redirect to a file or use --out-file.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command, workoutIdArg: string, mediaIdArg: string) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      outFile?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo workout media download: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const workoutId = trimWorkoutId(workoutIdArg);
+    const mediaId = trimWorkoutId(mediaIdArg);
+    if (!isValidWorkoutId(workoutId)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo workout media download: workout id "${workoutIdArg}" is not a valid UUID`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    if (!isValidWorkoutId(mediaId)) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo workout media download: media id "${mediaIdArg}" is not a valid UUID`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeWorkoutMediaDownload(
+      merged.baseUrl,
+      key,
+      workoutId,
+      mediaId,
+    );
+    if (result.kind === "ok") {
+      const bytes = new Uint8Array(result.body);
+      const outPath = merged.outFile?.trim();
+      if (outPath) {
+        try {
+          await atomicWriteFile(outPath, bytes);
+        } catch (e) {
+          writeCommandError(merged.output, {
+            code: CLI_ERROR_CONFIG_WRITE_FAILED,
+            message: `tempo workout media download: could not write --out-file: ${e instanceof Error ? e.message : String(e)}`,
+          });
+          process.exit(EXIT_USAGE);
+        }
+        const ct = result.contentType;
+        const ctHint = ct ? ` (${ct})` : "";
+        writeErrLine(
+          `Wrote ${bytes.byteLength} bytes to ${outPath}${ctHint}`,
+        );
+        return;
+      }
+      if (process.stdout.isTTY) {
+        writeErrLine(
+          "tempo: writing binary data to stdout; redirect to a file or use --out-file (-o) to avoid garbling a terminal.",
+        );
+      }
+      await new Promise<void>((resolve, reject) => {
+        process.stdout.write(Buffer.from(bytes), (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: workoutMediaDownloadHttpErrorMessageForCli(
+          result.status,
+          result.bodyText,
+          key,
+          workoutId,
+          mediaId,
         ),
       });
       process.exit(exitCodeForHttpStatus(result.status));
