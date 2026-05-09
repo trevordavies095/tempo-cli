@@ -24,6 +24,7 @@ import {
 } from "./commands/health.js";
 import {
   probeAuthMe,
+  authFailedApiKeysSettingsMessage,
   authMeHumanSuccessLine,
   authMeHttpErrorMessageForCli,
   AUTH_ME_PATH,
@@ -2148,7 +2149,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-This command does not call the Tempo API yet (week resolution only). No API key required.
+Runs GET /auth/me once before emitting output (same API key resolution as other commands: --api-key, TEMPO_API_KEY, config). Full Markdown report generation will follow in later releases.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2164,11 +2165,6 @@ ${HELP_GLOBALS_HINT}
       timezone?: string;
       write?: string;
     };
-    setEffectiveGlobalConfig({
-      baseUrl: merged.baseUrl,
-      output: merged.output,
-      apiKey: pickApiKey(merged.apiKey, fileLayer),
-    });
 
     const tzRaw = merged.timezone?.trim();
     const tz =
@@ -2192,6 +2188,49 @@ ${HELP_GLOBALS_HINT}
         message: `tempo weekly-recap: ${resolved.message}`,
       });
       process.exit(EXIT_USAGE);
+    }
+
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo weekly-recap: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+
+    const authResult = await probeAuthMe(merged.baseUrl, key);
+    if (authResult.kind === "http") {
+      if (authResult.status === 401) {
+        writeCommandError(merged.output, {
+          code: CLI_ERROR_HTTP,
+          message: authFailedApiKeysSettingsMessage(merged.baseUrl),
+        });
+        process.exit(exitCodeForHttpStatus(401));
+      }
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: `tempo weekly-recap: ${authMeHttpErrorMessageForCli(
+          authResult.status,
+          authResult.body,
+          key,
+        )}`,
+      });
+      process.exit(exitCodeForHttpStatus(authResult.status));
+    }
+    if (authResult.kind === "transport") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_TRANSPORT,
+        message: transportErrorMessage(authResult.error),
+      });
+      process.exit(exitCodeForFetchFailure(authResult.error));
     }
 
     const v = resolved.value;

@@ -5,6 +5,7 @@ import {
 } from "../exit/exits.js";
 import {
   API_KEY_REDACTED,
+  authFailedApiKeysSettingsMessage,
   authMeHttpErrorMessage,
   authMeHttpErrorMessageForCli,
   authMeHumanSuccessLine,
@@ -135,6 +136,28 @@ describe("redactApiKeyInText", () => {
     expect(redactApiKeyInText(`Bearer ${k}`, k)).toBe(`Bearer ${API_KEY_REDACTED}`);
     expect(redactApiKeyInText(`echo ${k} done`, k)).toBe(
       `echo ${API_KEY_REDACTED} done`,
+    );
+  });
+});
+
+describe("authFailedApiKeysSettingsMessage", () => {
+  it("uses origin for http localhost", () => {
+    expect(authFailedApiKeysSettingsMessage("http://localhost:5001")).toBe(
+      "Auth failed. Check your API key (tmp_...) at http://localhost:5001/settings/api-keys",
+    );
+  });
+
+  it("uses origin for https host and strips path", () => {
+    expect(
+      authFailedApiKeysSettingsMessage("https://tempo.example.com/v1/"),
+    ).toBe(
+      "Auth failed. Check your API key (tmp_...) at https://tempo.example.com/settings/api-keys",
+    );
+  });
+
+  it("adds https when scheme omitted", () => {
+    expect(authFailedApiKeysSettingsMessage("tempo.example.com")).toBe(
+      "Auth failed. Check your API key (tmp_...) at https://tempo.example.com/settings/api-keys",
     );
   });
 });

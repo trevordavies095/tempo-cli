@@ -76,3 +76,26 @@ export function authMeHumanSuccessLine(status: number, body: string): string {
   if (!block) return `OK (HTTP ${status})`;
   return `OK (HTTP ${status})\n${block}`;
 }
+
+/**
+ * Weekly recap §3.4: actionable copy when GET /auth/me returns 401.
+ * Uses the configured API base URL origin so self-hosted http/https hosts resolve correctly.
+ */
+export function authFailedApiKeysSettingsMessage(baseUrl: string): string {
+  const trimmed = baseUrl.trim();
+  let origin: string;
+  try {
+    origin = new URL(trimmed).origin;
+  } catch {
+    try {
+      const withScheme = /^https?:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`;
+      origin = new URL(withScheme).origin;
+    } catch {
+      const base = trimmed.replace(/\/+$/, "");
+      return `Auth failed. Check your API key (tmp_...) at ${base}/settings/api-keys`;
+    }
+  }
+  return `Auth failed. Check your API key (tmp_...) at ${origin}/settings/api-keys`;
+}
