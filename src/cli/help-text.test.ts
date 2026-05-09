@@ -303,7 +303,9 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("json");
     expect(out).toContain("TEMPO_API_KEY");
     expect(out).toContain("GET /auth/me");
-    expect(out).toContain("GET /settings/heart-rate-zones");
-    expect(out).toContain("GET /settings/unit-preference");
+    expect(out).toContain("heart-rate-zones");
+    expect(out).toContain("unit-preference");
+    expect(out).toContain("GET /workouts");
+    expect(out).toContain("GET /shoes");
   });
 });

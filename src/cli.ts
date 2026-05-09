@@ -151,6 +151,7 @@ import {
   shoeMileageHumanSuccessLine,
   shoeMileageHttpErrorMessageForCli,
 } from "./commands/shoe-mileage.js";
+import { fetchRecapWorkoutData } from "./weekly-recap/fetch-workouts.js";
 import {
   formatRecapZonesSummary,
   parseAndValidateHeartRateZones,
@@ -2131,7 +2132,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("weekly-recap")
   .description(
-    "Resolve the recap week (Mon–Sun) and UTC bounds for the Tempo API. Full report generation is not wired yet.",
+    "Resolve the recap week (Mon–Sun), verify auth and settings, then fetch workouts (list + detail) and shoes for that window.",
   )
   .option(
     "--week <spec>",
@@ -2155,7 +2156,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me, then GET /settings/heart-rate-zones and GET /settings/unit-preference (same API key resolution: --api-key, TEMPO_API_KEY, config). Full Markdown report generation will follow in later releases.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), and GET /shoes. Same API key resolution: --api-key, TEMPO_API_KEY, config. Full Markdown report generation will follow in later releases.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2301,7 +2302,50 @@ ${HELP_GLOBALS_HINT}
     }
 
     const v = resolved.value;
+
+    const fetchData = await fetchRecapWorkoutData({
+      baseUrl: merged.baseUrl,
+      apiKey: key,
+      startDate: v.utcStartDate,
+      endDate: v.utcEndDate,
+    });
+
+    if (!fetchData.ok) {
+      const code =
+        fetchData.kind === "invalid"
+          ? CLI_ERROR_INVALID_ARGUMENTS
+          : fetchData.kind === "http"
+            ? CLI_ERROR_HTTP
+            : CLI_ERROR_TRANSPORT;
+      writeCommandError(merged.output, {
+        code,
+        message: fetchData.message,
+      });
+      if (fetchData.kind === "invalid") {
+        process.exit(EXIT_USAGE);
+      }
+      if (fetchData.kind === "http") {
+        process.exit(exitCodeForHttpStatus(fetchData.httpStatus ?? 400));
+      }
+      process.exit(
+        exitCodeForFetchFailure(
+          fetchData.transportError ?? new Error(fetchData.message),
+        ),
+      );
+    }
+
     const zoneSummary = formatRecapZonesSummary(zonesParsed.zones);
+
+    let shoesHuman = `Shoes: OK (HTTP ${fetchData.shoesStatus})`;
+    try {
+      const sp = JSON.parse(fetchData.shoesBody.trim()) as unknown;
+      if (Array.isArray(sp)) {
+        shoesHuman = `Shoes: OK (${sp.length} shoe(s), HTTP ${fetchData.shoesStatus})`;
+      }
+    } catch {
+      /* ignore */
+    }
+
     const humanLines = [
       `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
       `UTC startDate: ${v.utcStartDate}`,
@@ -2309,6 +2353,10 @@ ${HELP_GLOBALS_HINT}
       `timezoneOffsetMinutes: ${v.timezoneOffsetMinutes}`,
       `Unit preference: ${unitParsed.unit}`,
       `Heart rate zones: OK (5 zones) — ${zoneSummary}`,
+      `Workouts in range (list rows): ${fetchData.listItemCount}`,
+      `Unique workout IDs: ${fetchData.workoutIds.length}`,
+      `Detail bodies fetched: ${fetchData.workoutDetails.length}`,
+      shoesHuman,
     ].join("\n");
 
     const jsonBody: Record<string, unknown> = {
@@ -2324,6 +2372,19 @@ ${HELP_GLOBALS_HINT}
         heartRateZones: {
           zones: zonesParsed.zones,
         },
+      },
+      workouts: {
+        count: fetchData.workoutIds.length,
+        ids: fetchData.workoutIds,
+        details: fetchData.workoutDetails.map((d) => ({
+          id: d.id,
+          status: d.status,
+          body: d.body,
+        })),
+      },
+      shoes: {
+        status: fetchData.shoesStatus,
+        body: fetchData.shoesBody,
       },
     };
 
