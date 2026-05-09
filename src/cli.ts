@@ -15,12 +15,25 @@ import {
   isVersionInvocation,
   peekOutputModeFromArgv,
 } from "./cli/argv-output-peek.js";
-import { EXIT_USAGE } from "./exit/exits.js";
+import {
+  healthHumanSuccessLine,
+  healthHttpErrorMessage,
+  HEALTH_PATH,
+  probeHealth,
+  transportErrorMessage,
+} from "./commands/health.js";
+import {
+  exitCodeForFetchFailure,
+  exitCodeForHttpStatus,
+  EXIT_USAGE,
+} from "./exit/exits.js";
 import { writeOutLine, writeErrLine } from "./io/streams.js";
 import {
   CLI_ERROR_CONFIG_INVALID,
   CLI_ERROR_CONFIG_WRITE_FAILED,
+  CLI_ERROR_HTTP,
   CLI_ERROR_MISSING_API_KEY,
+  CLI_ERROR_TRANSPORT,
   writeCommandError,
 } from "./output/error.js";
 import { writeCommandSuccess } from "./output/success.js";
@@ -143,6 +156,49 @@ configCmd
     if (process.platform !== "win32") {
       writeErrLine("Set config file mode to 0600 (user read/write only).");
     }
+  });
+
+program
+  .command("health")
+  .description(
+    "GET /health on the configured base URL without sending an API key (reachability check).",
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+    });
+    const result = await probeHealth(merged.baseUrl);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        healthHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: HEALTH_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: healthHttpErrorMessage(result.status, result.body),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
   });
 
 program

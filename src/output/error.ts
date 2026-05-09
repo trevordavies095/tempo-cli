@@ -5,6 +5,10 @@ import { writeErrLine } from "../io/streams.js";
 export const CLI_ERROR_CONFIG_INVALID = "CONFIG_INVALID";
 export const CLI_ERROR_MISSING_API_KEY = "MISSING_API_KEY";
 export const CLI_ERROR_CONFIG_WRITE_FAILED = "CONFIG_WRITE_FAILED";
+/** HTTP response received but status is not successful (e.g. GET /health returned 503). */
+export const CLI_ERROR_HTTP = "HTTP_ERROR";
+/** Network/DNS/timeout or other failure before a usable HTTP response. */
+export const CLI_ERROR_TRANSPORT = "TRANSPORT";
 
 export type CommandErrorPayload = {
   code: string;

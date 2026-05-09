@@ -126,6 +126,12 @@ Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/
 
 Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists the **config file path**, precedence (file, then env, then flags), and **`TEMPO_BASE_URL`** / **`TEMPO_API_KEY`**.
 
+**`tempo health`** calls **`GET /health`** on your configured base URL (**`--base-url`**, **`TEMPO_BASE_URL`**, or `base_url` in the config file). It does **not** send **`Authorization`** or use **`TEMPO_API_KEY`** / **`--api-key`**, so you can check that the instance is reachable before debugging auth.
+
+- **Human (default):** prints `OK (HTTP <status>)`, and if the response has a body, that text on the following line(s).
+- **JSON:** one object on **stdout**, for example `{"ok":true,"status":200,"path":"/health","body":""}`.
+- **Failures:** HTTP error responses use the [exit codes](#exit-codes) table (`401`/`403` → **2**, `404` → **4**, `5xx` → **3**, other `4xx` → **1**). Network/timeouts/DNS failures exit **5**. With **`--output json`**, a single JSON error object is written to **stderr** (`error.code` **`HTTP_ERROR`** or **`TRANSPORT`**).
+
 **`tempo version`** prints the **local** CLI version from the npm package. With **`--output human`** (default) it prints one line (`<name> <version>`). With **`--output json`** it prints a single JSON object on **stdout**, for example:
 
 ```json
