@@ -152,6 +152,12 @@ import {
   shoeMileageHttpErrorMessageForCli,
 } from "./commands/shoe-mileage.js";
 import {
+  formatRecapZonesSummary,
+  parseAndValidateHeartRateZones,
+  parseRecapUnitPreference,
+  RECAP_HR_ZONES_REQUIRED_MESSAGE,
+} from "./weekly-recap/recap-settings.js";
+import {
   getSystemTimeZone,
   isValidIanaTimeZone,
   resolveRecapWeek,
@@ -2149,7 +2155,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me once before emitting output (same API key resolution as other commands: --api-key, TEMPO_API_KEY, config). Full Markdown report generation will follow in later releases.
+Runs GET /auth/me, then GET /settings/heart-rate-zones and GET /settings/unit-preference (same API key resolution: --api-key, TEMPO_API_KEY, config). Full Markdown report generation will follow in later releases.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2233,12 +2239,76 @@ ${HELP_GLOBALS_HINT}
       process.exit(exitCodeForFetchFailure(authResult.error));
     }
 
+    const [hrRes, unitRes] = await Promise.all([
+      probeSettingsHeartRateZones(merged.baseUrl, key),
+      probeSettingsUnitPreference(merged.baseUrl, key),
+    ]);
+
+    if (hrRes.kind === "transport") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_TRANSPORT,
+        message: transportErrorMessage(hrRes.error),
+      });
+      process.exit(exitCodeForFetchFailure(hrRes.error));
+    }
+    if (unitRes.kind === "transport") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_TRANSPORT,
+        message: transportErrorMessage(unitRes.error),
+      });
+      process.exit(exitCodeForFetchFailure(unitRes.error));
+    }
+    if (hrRes.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: `tempo weekly-recap: ${settingsHeartRateZonesHttpErrorMessageForCli(
+          hrRes.status,
+          hrRes.body,
+          key,
+        )}`,
+      });
+      process.exit(exitCodeForHttpStatus(hrRes.status));
+    }
+    if (unitRes.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: `tempo weekly-recap: ${settingsUnitPreferenceHttpErrorMessageForCli(
+          unitRes.status,
+          unitRes.body,
+          key,
+        )}`,
+      });
+      process.exit(exitCodeForHttpStatus(unitRes.status));
+    }
+
+    const zonesParsed = parseAndValidateHeartRateZones(hrRes.body);
+    if (!zonesParsed.ok) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: `tempo weekly-recap: ${RECAP_HR_ZONES_REQUIRED_MESSAGE}`,
+      });
+      process.exit(EXIT_USAGE);
+    }
+
+    const unitParsed = parseRecapUnitPreference(unitRes.body);
+    if (!unitParsed.ok) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message:
+          "tempo weekly-recap: could not parse unit preference (expected metric or imperial).",
+      });
+      process.exit(EXIT_USAGE);
+    }
+
     const v = resolved.value;
+    const zoneSummary = formatRecapZonesSummary(zonesParsed.zones);
     const humanLines = [
       `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
       `UTC startDate: ${v.utcStartDate}`,
       `UTC endDate: ${v.utcEndDate}`,
       `timezoneOffsetMinutes: ${v.timezoneOffsetMinutes}`,
+      `Unit preference: ${unitParsed.unit}`,
+      `Heart rate zones: OK (5 zones) — ${zoneSummary}`,
     ].join("\n");
 
     const jsonBody: Record<string, unknown> = {
@@ -2249,6 +2319,12 @@ ${HELP_GLOBALS_HINT}
       utcEndDate: v.utcEndDate,
       timezone: tz,
       timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      settings: {
+        unitPreference: unitParsed.unit,
+        heartRateZones: {
+          zones: zonesParsed.zones,
+        },
+      },
     };
 
     const writePath = merged.write?.trim();

@@ -291,7 +291,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("UUID");
   });
 
-  it("weekly-recap --help documents week, timezone, write, auth, and global output vs report path", () => {
+  it("weekly-recap --help documents week, timezone, write, auth, settings, and global output vs report path", () => {
     const out = helpFor(["weekly-recap", "--help"]);
     expect(out).toContain("--week");
     expect(out).toContain("--timezone");
@@ -303,5 +303,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("json");
     expect(out).toContain("TEMPO_API_KEY");
     expect(out).toContain("GET /auth/me");
+    expect(out).toContain("GET /settings/heart-rate-zones");
+    expect(out).toContain("GET /settings/unit-preference");
   });
 });
