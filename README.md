@@ -132,6 +132,10 @@ Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, *
 - **JSON:** one object on **stdout**, for example `{"ok":true,"status":200,"path":"/health","body":""}`.
 - **Failures:** HTTP error responses use the [exit codes](#exit-codes) table (`401`/`403` → **2**, `404` → **4**, `5xx` → **3**, other `4xx` → **1**). Network/timeouts/DNS failures exit **5**. With **`--output json`**, a single JSON error object is written to **stderr** (`error.code` **`HTTP_ERROR`** or **`TRANSPORT`**).
 
+**`tempo server version`** calls **`GET /version`** on your configured base URL. Like **`tempo health`**, it does **not** send an API key, so it works when that route is public on your instance.
+
+- **Human / JSON / failures:** Same conventions as **`tempo health`**, but with **`path`**: **`"/version"`** in the success JSON (for example `{"ok":true,"status":200,"path":"/version","body":""}`).
+
 **`tempo version`** prints the **local** CLI version from the npm package. With **`--output human`** (default) it prints one line (`<name> <version>`). With **`--output json`** it prints a single JSON object on **stdout**, for example:
 
 ```json

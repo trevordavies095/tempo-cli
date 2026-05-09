@@ -23,6 +23,12 @@ import {
   transportErrorMessage,
 } from "./commands/health.js";
 import {
+  probeServerVersion,
+  serverVersionHumanSuccessLine,
+  serverVersionHttpErrorMessage,
+  VERSION_PATH,
+} from "./commands/server-version.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -201,10 +207,57 @@ program
     process.exit(exitCodeForFetchFailure(result.error));
   });
 
+const serverCmd = program
+  .command("server")
+  .description("Commands that call the Tempo HTTP API (read-only).");
+
+serverCmd
+  .command("version")
+  .description(
+    "GET /version from the server without sending an API key (public meta endpoint when exposed).",
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+    });
+    const result = await probeServerVersion(merged.baseUrl);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        serverVersionHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: VERSION_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: serverVersionHttpErrorMessage(result.status, result.body),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
 program
   .command("version")
   .description(
-    "Print the local CLI version (npm package). A future release may add the Tempo server version via the API.",
+    "Print the local CLI version (npm package). For the running server response from GET /version, use: tempo server version.",
   )
   .action(function (this: Command) {
     const merged = this.optsWithGlobals() as {
