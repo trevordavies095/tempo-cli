@@ -89,6 +89,38 @@ import {
   statsYearlyWeeklyQueryFromCli,
 } from "./commands/stats-yearly-weekly.js";
 import {
+  buildStatsRelativeEffortPath,
+  probeStatsRelativeEffort,
+  statsRelativeEffortHumanSuccessLine,
+  statsRelativeEffortHttpErrorMessageForCli,
+  statsRelativeEffortQueryFromCli,
+} from "./commands/stats-relative-effort.js";
+import {
+  STATS_BEST_EFFORTS_PATH,
+  probeStatsBestEfforts,
+  statsBestEffortsHumanSuccessLine,
+  statsBestEffortsHttpErrorMessageForCli,
+} from "./commands/stats-best-efforts.js";
+import {
+  buildStatsAvailablePeriodsPath,
+  probeStatsAvailablePeriods,
+  statsAvailablePeriodsHumanSuccessLine,
+  statsAvailablePeriodsHttpErrorMessageForCli,
+  statsAvailablePeriodsQueryFromCli,
+} from "./commands/stats-available-periods.js";
+import {
+  STATS_AVAILABLE_YEARS_PATH,
+  probeStatsAvailableYears,
+  statsAvailableYearsHumanSuccessLine,
+  statsAvailableYearsHttpErrorMessageForCli,
+} from "./commands/stats-available-years.js";
+import {
+  STATS_INSIGHTS_PATH,
+  probeStatsInsights,
+  statsInsightsHumanSuccessLine,
+  statsInsightsHttpErrorMessageForCli,
+} from "./commands/stats-insights.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -1257,10 +1289,399 @@ ${HELP_GLOBALS_HINT}
     process.exit(exitCodeForFetchFailure(result.error));
   });
 
+statsCmd
+  .command("relative-effort")
+  .description(
+    "GET /stats/relative-effort — cumulative relative effort and 3-week average.",
+  )
+  .option(
+    "--timezone-offset-minutes <n>",
+    "Timezone offset in minutes (query: timezoneOffsetMinutes; negative for behind UTC)",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats relative-effort
+  tempo stats relative-effort --timezone-offset-minutes -300
+  tempo --output json stats relative-effort
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      timezoneOffsetMinutes?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats relative-effort: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const parsed = statsRelativeEffortQueryFromCli({
+      timezoneOffsetMinutes: merged.timezoneOffsetMinutes,
+    });
+    if ("error" in parsed) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: parsed.error,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsRelativeEffort(
+      merged.baseUrl,
+      key,
+      parsed.ok,
+    );
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsRelativeEffortHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildStatsRelativeEffortPath(parsed.ok),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsRelativeEffortHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          parsed.ok,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+statsCmd
+  .command("best-efforts")
+  .description(
+    "GET /stats/best-efforts — fastest time for each standard distance (read-only; never recalculates).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats best-efforts
+  tempo --output json stats best-efforts
+
+This command only performs GET. It does not call POST /stats/best-efforts/recalculate.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats best-efforts: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsBestEfforts(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsBestEffortsHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: STATS_BEST_EFFORTS_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsBestEffortsHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+statsCmd
+  .command("available-periods")
+  .description(
+    "GET /stats/available-periods — consecutive 1-year periods going backwards from today.",
+  )
+  .option(
+    "--timezone-offset-minutes <n>",
+    "Timezone offset in minutes (query: timezoneOffsetMinutes; negative for behind UTC)",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats available-periods
+  tempo stats available-periods --timezone-offset-minutes -300
+  tempo --output json stats available-periods
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      timezoneOffsetMinutes?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats available-periods: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const parsed = statsAvailablePeriodsQueryFromCli({
+      timezoneOffsetMinutes: merged.timezoneOffsetMinutes,
+    });
+    if ("error" in parsed) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: parsed.error,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsAvailablePeriods(
+      merged.baseUrl,
+      key,
+      parsed.ok,
+    );
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsAvailablePeriodsHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildStatsAvailablePeriodsPath(parsed.ok),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsAvailablePeriodsHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          parsed.ok,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+statsCmd
+  .command("available-years")
+  .description(
+    "GET /stats/available-years — distinct years with workouts (descending).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats available-years
+  tempo --output json stats available-years
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats available-years: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsAvailableYears(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsAvailableYearsHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: STATS_AVAILABLE_YEARS_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsAvailableYearsHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+statsCmd
+  .command("insights")
+  .description(
+    "GET /stats/insights — running insights including data coverage metadata.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats insights
+  tempo --output json stats insights
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats insights: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsInsights(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsInsightsHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: STATS_INSIGHTS_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsInsightsHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
 statsCmd.addHelpText(
   "after",
   `
-Subcommands: weekly, yearly, yearly-weekly. Run tempo stats <command> --help for each.
+Subcommands: weekly, yearly, yearly-weekly, relative-effort, best-efforts, available-periods, available-years, insights. Run tempo stats <command> --help for each.
 
 All stats commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config).
 

@@ -134,12 +134,60 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("--timezone-offset-minutes");
   });
 
-  it("stats --help lists subcommands and globals hint", () => {
+  it("stats --help lists all subcommands and globals hint", () => {
     const out = helpFor(["stats", "--help"]);
     expect(out).toContain("tempo --help");
     expect(out).toContain("Subcommands:");
     expect(out).toContain("weekly");
     expect(out).toContain("yearly");
     expect(out).toContain("yearly-weekly");
+    expect(out).toContain("relative-effort");
+    expect(out).toContain("best-efforts");
+    expect(out).toContain("available-periods");
+    expect(out).toContain("available-years");
+    expect(out).toContain("insights");
+  });
+
+  it("stats relative-effort --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "relative-effort", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats relative-effort");
+    expect(out).toContain("GET /stats/relative-effort");
+    expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats best-efforts --help documents path, GET-only, env, and globals", () => {
+    const out = helpFor(["stats", "best-efforts", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats best-efforts");
+    expect(out).toContain("GET /stats/best-efforts");
+    expect(out).toContain("recalculate");
+  });
+
+  it("stats available-periods --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "available-periods", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats available-periods");
+    expect(out).toContain("GET /stats/available-periods");
+    expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats available-years --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "available-years", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats available-years");
+    expect(out).toContain("GET /stats/available-years");
+  });
+
+  it("stats insights --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "insights", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats insights");
+    expect(out).toContain("GET /stats/insights");
   });
 });

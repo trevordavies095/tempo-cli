@@ -68,6 +68,31 @@ describe("tempo stats weekly (subprocess)", () => {
     expect(err.error.message).toContain("stats weekly");
   });
 
+  it("exits 1 with MISSING_API_KEY JSON on stderr for stats best-efforts (no-param branch)", () => {
+    const base = mkdtempSync(join(tmpdir(), "tempo-cli-stats-best-efforts-"));
+    const tempoDir = join(base, "tempo");
+    mkdirSync(tempoDir, { recursive: true });
+    writeFileSync(
+      join(tempoDir, "config.toml"),
+      'base_url = "http://localhost:5001"\n',
+    );
+    cleanup = () => rmSync(base, { recursive: true, force: true });
+
+    const env: Record<string, string | undefined> =
+      process.platform === "win32"
+        ? { APPDATA: base, TEMPO_API_KEY: "" }
+        : { XDG_CONFIG_HOME: base, TEMPO_API_KEY: "" };
+
+    const r = runTempo(["--output", "json", "stats", "best-efforts"], env);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    const err = JSON.parse(r.stderr.trim()) as {
+      error: { code: string; message: string };
+    };
+    expect(err.error.code).toBe(CLI_ERROR_MISSING_API_KEY);
+    expect(err.error.message).toContain("stats best-efforts");
+  });
+
   it("exits 1 with INVALID_ARGUMENTS when timezone-offset-minutes is not an int", () => {
     const base = mkdtempSync(
       join(tmpdir(), "tempo-cli-stats-weekly-badtz-"),
