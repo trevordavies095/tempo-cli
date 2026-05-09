@@ -37,6 +37,17 @@ Global flags will mirror these where useful (for example `--base-url`, `--api-ke
 
 A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_spec.json) for tests and client generation. When Tempo publishes a canonical spec from its mainline branches, this repo should track that for compatibility notes and codegen.
 
+## Development
+
+- **Prerequisites:** Node.js 20 or newer (see `.nvmrc` for a suggested version).
+- **Install:** `npm install`
+- **Build:** `npm run build` (emits JavaScript to `dist/`)
+- **Watch mode:** `npm run dev` (runs the TypeScript compiler in watch mode)
+- **Typecheck:** `npm run typecheck`
+- **Run locally:** After a build, `npx tempo` or `node dist/cli.js` (prints the CLI name and version).
+
+Toolchain rationale (TypeScript on Node vs other options) is documented in [docs/adr/0001-use-typescript-node-for-cli.md](docs/adr/0001-use-typescript-node-for-cli.md).
+
 ## Contributing
 
 Issues and pull requests for this repository should cover CLI behavior, packaging, and documentation. Changes to Tempo’s API, authentication, or OpenAPI publishing belong in the [Tempo](https://github.com/trevordavies095/tempo/) repository; link related work across repos when both sides change.

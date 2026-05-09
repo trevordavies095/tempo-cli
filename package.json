@@ -1,0 +1,23 @@
+{
+  "name": "tempo-cli",
+  "version": "0.0.0",
+  "description": "Command-line client for Tempo",
+  "type": "module",
+  "bin": {
+    "tempo": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["tempo", "cli"],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.3"
+  }
+}
