@@ -22,16 +22,39 @@ Official-style command-line client for **[Tempo](https://github.com/trevordavies
 
 Some early examples used `tempo workout list`; the canonical list command above is the one this project will implement (optional alias TBD).
 
-## Configuration (planned)
+## Configuration
 
-Typical environment variables:
+### Config file
+
+Optional **`config.toml`** supplies defaults before environment variables and CLI flags.
+
+| Platform | Path |
+|----------|------|
+| Unix / macOS | `$XDG_CONFIG_HOME/tempo/config.toml`, or `~/.config/tempo/config.toml` if `XDG_CONFIG_HOME` is unset |
+| Windows | `%APPDATA%\tempo\config.toml` (typically `~\AppData\Roaming\tempo\config.toml`) |
+
+Optional keys (all strings except `output`): **`base_url`**, **`output`** (`human` or `json`), **`api_key`**. Keys are **admin-issued in Tempo**; this CLI does not create keys or prompt for them interactively.
+
+**Precedence** (later wins): built-in defaults, then config file, then environment, then explicit CLI flags. So **`TEMPO_*` overrides the file** when a flag is not passed.
+
+Example:
+
+```toml
+base_url = "http://localhost:5001"
+output = "human"
+# api_key = "tmp_..."   # optional; prefer env in CI
+```
+
+Invalid TOML or an invalid `output` value causes the CLI to exit with an error on stderr.
+
+### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `TEMPO_BASE_URL` | API root (no trailing slash required; normalize in client) |
-| `TEMPO_API_KEY` | Bearer token for authenticated endpoints |
+| `TEMPO_BASE_URL` | Overrides `base_url` from the file when `--base-url` is omitted |
+| `TEMPO_API_KEY` | Overrides `api_key` from the file when `--api-key` is omitted |
 
-Global flags will mirror these where useful (for example `--base-url`, `--api-key`). Config file precedence will favor environment overrides over on-disk config.
+Global flags mirror these where useful (`--base-url`, `--api-key`, `--output`).
 
 ## API contract
 
@@ -48,7 +71,7 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 
 ### CLI usage (early)
 
-Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists **`TEMPO_BASE_URL`** and **`TEMPO_API_KEY`** and how they relate to the flags.
+Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists the **config file path**, precedence (file, then env, then flags), and **`TEMPO_BASE_URL`** / **`TEMPO_API_KEY`**.
 
 There are no resource subcommands yet. **`tempo` with no arguments** prints the same help text to **stdout** and exits **0** (same as `tempo --help`). Invalid flag values (for example **`--output`** not `human` or `json`) exit non-zero with an error on **stderr**.
 
