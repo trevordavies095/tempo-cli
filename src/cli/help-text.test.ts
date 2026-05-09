@@ -105,4 +105,41 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("tempo version");
     expect(out).toContain("tempo --help");
   });
+
+  it("stats weekly --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "weekly", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats weekly");
+    expect(out).toContain("GET /stats/weekly");
+    expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats yearly --help documents path, env, and globals", () => {
+    const out = helpFor(["stats", "yearly", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats yearly");
+    expect(out).toContain("GET /stats/yearly");
+    expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats yearly-weekly --help documents path, flags, env, and globals", () => {
+    const out = helpFor(["stats", "yearly-weekly", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats yearly-weekly");
+    expect(out).toContain("GET /stats/yearly-weekly");
+    expect(out).toContain("--period-end-date");
+    expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats --help lists subcommands and globals hint", () => {
+    const out = helpFor(["stats", "--help"]);
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("Subcommands:");
+    expect(out).toContain("weekly");
+    expect(out).toContain("yearly");
+    expect(out).toContain("yearly-weekly");
+  });
 });
