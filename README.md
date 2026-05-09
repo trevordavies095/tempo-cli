@@ -44,7 +44,13 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 - **Build:** `npm run build` (emits JavaScript to `dist/`)
 - **Watch mode:** `npm run dev` (runs the TypeScript compiler in watch mode)
 - **Typecheck:** `npm run typecheck`
-- **Run locally:** After a build, `npx tempo` or `node dist/cli.js` (prints the CLI name and version).
+- **Run locally:** After a build, `npx tempo` or `node dist/cli.js`.
+
+### CLI usage (early)
+
+Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists **`TEMPO_BASE_URL`** and **`TEMPO_API_KEY`** and how they relate to the flags.
+
+There are no resource subcommands yet. **`tempo` with no arguments** prints the same help text to **stdout** and exits **0** (same as `tempo --help`). Invalid flag values (for example **`--output`** not `human` or `json`) exit non-zero with an error on **stderr**.
 
 Toolchain rationale (TypeScript on Node vs other options) is documented in [docs/adr/0001-use-typescript-node-for-cli.md](docs/adr/0001-use-typescript-node-for-cli.md).
 
