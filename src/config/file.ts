@@ -39,9 +39,8 @@ export function loadConfigFile(configPath: string): FileLayer {
   let raw: unknown;
   try {
     raw = parse(readFileSync(configPath, "utf8"));
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Invalid TOML in config file ${configPath}: ${msg}`);
+  } catch {
+    throw new Error(`Invalid TOML in config file ${configPath}.`);
   }
 
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {

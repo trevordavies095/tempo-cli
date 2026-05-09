@@ -47,6 +47,20 @@ output = "human"
 
 Invalid TOML or an invalid `output` value causes the CLI to exit with an error on stderr.
 
+### Saving an API key to the config file
+
+Use a key **issued in Tempo** (this CLI does not create keys):
+
+```bash
+tempo config set-api-key --api-key 'tmp_...'
+```
+
+Key source **precedence** for this command: **`--api-key`** (including the global flag before the subcommand, e.g. `tempo --api-key 'tmp_...' config set-api-key`), then **`TEMPO_API_KEY`**, then the **first non-empty line on stdin** (when stdin is not a TTY), e.g. `printf '%s' "$TEMPO_API_KEY" | tempo config set-api-key`.
+
+The command **merges** `api_key` into existing `config.toml` and **preserves** other keys (such as `base_url`). It prints the config **path only** on success; the key is **never logged** or echoed.
+
+**Permissions:** On **Unix / macOS**, the config file is created or updated with mode **`0600`** (user read/write only), and the containing `tempo` directory is created with **`0700`** when the CLI creates it. On **Windows**, POSIX modes are not enforced the same way; treat permissions as **best-effort** and rely on your account and filesystem ACLs.
+
 ### Environment variables
 
 | Variable | Purpose |
@@ -73,7 +87,7 @@ A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_s
 
 Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, **`--output`** (`human` or `json`), **`--api-key`**, and **`--version`**. The help footer lists the **config file path**, precedence (file, then env, then flags), and **`TEMPO_BASE_URL`** / **`TEMPO_API_KEY`**.
 
-There are no resource subcommands yet. **`tempo` with no arguments** prints the same help text to **stdout** and exits **0** (same as `tempo --help`). Invalid flag values (for example **`--output`** not `human` or `json`) exit non-zero with an error on **stderr**.
+Resource commands are not implemented yet. **`tempo config set-api-key`** writes an API key to the config file with restrictive permissions on Unix. **`tempo` with no arguments** prints the same help text to **stdout** and exits **0** (same as `tempo --help`). Invalid flag values (for example **`--output`** not `human` or `json`) exit non-zero with an error on **stderr**.
 
 Toolchain rationale (TypeScript on Node vs other options) is documented in [docs/adr/0001-use-typescript-node-for-cli.md](docs/adr/0001-use-typescript-node-for-cli.md).
 
