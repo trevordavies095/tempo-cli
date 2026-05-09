@@ -103,6 +103,14 @@ The CLI uses a small, stable set of process exit codes (see [`src/exit/exits.ts`
 | **4** | Not found (**404**) |
 | **5** | Network / DNS / timeout and other transport failures (no successful HTTP response) |
 
+### JSON errors (stderr)
+
+When **`--output json`** and a command fails in a path the CLI controls (invalid config file, missing key source for **`config set-api-key`**, config write failure, etc.), **stderr** is a **single line** of JSON: an object with an **`error`** field shaped like Tempo’s predictable errors (**`code`**, **`message`**, **`request_id`**). For local failures, **`request_id`** is **`null`**. Success responses stay on **stdout** only; see [`writeCommandError`](src/output/error.ts).
+
+**Commander** may still print **human** text for invalid global flags (for example a bad **`--output`** value), because **`json`** output was never successfully selected.
+
+**Pre-parse config errors:** If the only **`json`** preference is inside **`config.toml`** and that file cannot be parsed, the CLI cannot read **`output`** from it—pass **`--output json`** on the command line to get JSON on **stderr** for that failure.
+
 ### HTTP client (for contributors)
 
 Commands use a shared **`createHttpClient`** helper ([`src/http/client.ts`](src/http/client.ts)) built on Node’s global **`fetch`**.

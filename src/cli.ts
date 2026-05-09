@@ -11,8 +11,15 @@ import {
 } from "./config/runtime.js";
 import { readKeyFromStdinIfAvailable } from "./config/stdin-key.js";
 import { persistApiKey } from "./config/write.js";
+import { peekOutputModeFromArgv } from "./cli/argv-output-peek.js";
 import { EXIT_USAGE } from "./exit/exits.js";
 import { writeOutLine, writeErrLine } from "./io/streams.js";
+import {
+  CLI_ERROR_CONFIG_INVALID,
+  CLI_ERROR_CONFIG_WRITE_FAILED,
+  CLI_ERROR_MISSING_API_KEY,
+  writeCommandError,
+} from "./output/error.js";
 import { writeCommandSuccess } from "./output/success.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +39,12 @@ const fileLayer = shouldSkipConfigLoad(process.argv.slice(2))
       try {
         return loadConfigFile(configPath);
       } catch (e) {
-        writeErrLine(e instanceof Error ? e.message : String(e));
+        const output = peekOutputModeFromArgv(process.argv.slice(2));
+        const message = e instanceof Error ? e.message : String(e);
+        writeCommandError(output, {
+          code: CLI_ERROR_CONFIG_INVALID,
+          message,
+        });
         process.exit(EXIT_USAGE);
       }
     })();
@@ -95,21 +107,29 @@ configCmd
     "API key (optional if TEMPO_API_KEY or stdin provides it; never logged or echoed).",
   )
   .action(function (this: Command) {
-    const merged = this.optsWithGlobals() as { apiKey?: string };
+    const merged = this.optsWithGlobals() as {
+      apiKey?: string;
+      output: "human" | "json";
+    };
     let key = merged.apiKey?.trim();
     if (!key) key = process.env.TEMPO_API_KEY?.trim();
     if (!key) key = readKeyFromStdinIfAvailable();
     if (!key) {
-      writeErrLine(
-        "tempo config set-api-key: provide --api-key, set TEMPO_API_KEY, or pipe the key on stdin (non-interactive).",
-      );
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo config set-api-key: provide --api-key, set TEMPO_API_KEY, or pipe the key on stdin (non-interactive).",
+      });
       process.exit(EXIT_USAGE);
     }
     const path = getDefaultConfigPath();
     try {
       persistApiKey(path, key);
     } catch (e) {
-      writeErrLine(e instanceof Error ? e.message : String(e));
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_CONFIG_WRITE_FAILED,
+        message: e instanceof Error ? e.message : String(e),
+      });
       process.exit(EXIT_USAGE);
     }
     writeOutLine(`Wrote API key to ${path}`);
