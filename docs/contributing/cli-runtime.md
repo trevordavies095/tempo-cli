@@ -96,6 +96,30 @@ For **`tempo auth me`**, non-success HTTP responses build stderr messages from t
 
 Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DEFAULT_TIMEOUT_MS` (30_000 ms). Bearer header when `apiKey` is non-empty after trim; keys are never logged. All GETs use **`credentials: "omit"`** so cookies are not sent. Some commands (**`tempo health`**, **`tempo server version`**) intentionally omit `apiKey` so requests stay unauthenticated; **`tempo auth me`** passes the merged key. TLS and proxy behavior follow Node’s `fetch` (Undici); details and env hints are in the README **Development** section.
 
+## Read-only contract (stats / settings / shoes)
+
+The CLI’s stats, settings, and shoes command groups are **GET-only** by design. The boundary is enforced in three reinforcing ways:
+
+- **Architectural lock.** [createHttpClient](../../src/http/client.ts) returns a client whose surface is exactly one method, `get(...)`. Any caller-supplied `init.method` is destructured out and replaced with `"GET"`, and `credentials` is forced to `"omit"`. There is no factory or instance method for `POST`/`PUT`/`PATCH`/`DELETE`, so a regression cannot ship without first widening the type **and** the runtime — both visible in code review.
+- **Endpoints intentionally not called.** The vendored snapshot at [tempo_openapi_spec.json](../../tempo_openapi_spec.json) defines these mutating routes for the same resource groups; the CLI never calls them:
+  - `PUT /settings/heart-rate-zones`
+  - `POST /settings/heart-rate-zones/update-with-recalc`
+  - `PUT /settings/unit-preference`
+  - `PUT /settings/default-shoe`
+  - `POST /shoes`
+  - `PATCH /shoes/{id}`
+  - `DELETE /shoes/{id}`
+  - `POST /stats/best-efforts/recalculate`
+- **Automated guard.** [read-only-contract.test.ts](../../src/cli/read-only-contract.test.ts) statically scans the source tree on every `npm test` run and fails CI if any of the following invariants regress: a stats/settings/shoes module declares a non-GET `method:` literal; one of those modules invokes `.post(`/`.put(`/`.patch(`/`.delete(` on any object; one of those modules embeds a mutate-only Tempo path (`/recalculate`, `/update-with-recalc`) as a string literal; any production source other than [src/http/client.ts](../../src/http/client.ts) calls `fetch(`; or the `HttpClient` surface in [src/http/client.ts](../../src/http/client.ts) grows a non-GET verb.
+
+Reviewer recipe (one-liner — expected output: zero hits):
+
+```bash
+rg -n "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]|\.(post|put|patch|delete)\(|/recalculate|/update-with-recalc" src
+```
+
+Adding a new GET-only command in these groups does **not** require updating the contract test — extend `READ_ONLY_GROUP_FILES` in [read-only-contract.test.ts](../../src/cli/read-only-contract.test.ts) so its source is included in the scan.
+
 ## Source map
 
 | Concern | Primary modules |
