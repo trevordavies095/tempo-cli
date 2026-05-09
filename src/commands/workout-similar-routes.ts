@@ -1,11 +1,15 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  compactWorkoutSummaryRow,
+  displayCellForHuman,
+  HUMAN_WORKOUT_TABLE_ROW_CAP,
+} from "../output/workout-human-rows.js";
 import { redactApiKeyInText } from "./auth-me.js";
 import { trimWorkoutId, WORKOUT_GET_PATH_PREFIX } from "./workout-get.js";
 
 const SIMILAR_ROUTES_SUFFIX = "/similar-routes";
 const BODY_SNIP_LEN = 500;
-const HUMAN_ARRAY_ROW_CAP = 20;
 
 export type SimilarRoutesQuery = {
   maxResults?: number;
@@ -45,56 +49,6 @@ function truncateForMessage(body: string): string {
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
-function pickFirst(
-  obj: Record<string, unknown>,
-  keys: readonly string[],
-): unknown {
-  for (const k of keys) {
-    if (
-      Object.prototype.hasOwnProperty.call(obj, k) &&
-      obj[k] !== undefined &&
-      obj[k] !== null &&
-      obj[k] !== ""
-    ) {
-      return obj[k];
-    }
-  }
-  return undefined;
-}
-
-function displayCell(value: unknown): string {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return String(value);
-  }
-  return JSON.stringify(value);
-}
-
-/** One line per similar-route entry (camelCase / PascalCase). */
-function compactSimilarRouteRow(obj: Record<string, unknown>): string {
-  const bits: string[] = [];
-  const id = pickFirst(obj, [
-    "workoutId",
-    "id",
-    "WorkoutId",
-    "Id",
-  ]);
-  if (id !== undefined) bits.push(displayCell(id));
-  const name = pickFirst(obj, ["name", "Name"]);
-  if (name !== undefined) bits.push(displayCell(name));
-  const started = pickFirst(obj, ["startedAt", "StartedAt"]);
-  if (started !== undefined) bits.push(displayCell(started));
-  const distance = pickFirst(obj, ["distance", "Distance"]);
-  if (distance !== undefined) bits.push(`distance=${displayCell(distance)}`);
-  const duration = pickFirst(obj, ["duration", "Duration"]);
-  if (duration !== undefined) bits.push(`duration=${displayCell(duration)}`);
-  return bits.length > 0 ? bits.join(" | ") : JSON.stringify(obj);
 }
 
 export function buildWorkoutSimilarRoutesPath(
@@ -202,14 +156,14 @@ export function workoutSimilarRoutesHumanSuccessLine(
         header,
         `${parsed.length} similar route(s)`,
       ];
-      const shown = parsed.slice(0, HUMAN_ARRAY_ROW_CAP);
+      const shown = parsed.slice(0, HUMAN_WORKOUT_TABLE_ROW_CAP);
       let i = 0;
       for (const item of shown) {
         i += 1;
         if (isPlainObject(item)) {
-          lines.push(`${i}. ${compactSimilarRouteRow(item)}`);
+          lines.push(`${i}. ${compactWorkoutSummaryRow(item)}`);
         } else {
-          lines.push(`${i}. ${displayCell(item)}`);
+          lines.push(`${i}. ${displayCellForHuman(item)}`);
         }
       }
       const rest = parsed.length - shown.length;

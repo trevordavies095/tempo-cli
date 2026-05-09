@@ -162,13 +162,60 @@ describe("probeWorkoutsList", () => {
 });
 
 describe("workoutsListHumanSuccessLine", () => {
-  it("formats JSON object bodies like auth me", () => {
+  it("formats paginated items with totals and compact rows", () => {
+    const wid = "550e8400-e29b-41d4-a716-446655440000";
+    const body = JSON.stringify({
+      items: [
+        {
+          id: wid,
+          name: "Morning",
+          startedAt: "2025-01-01T12:00:00Z",
+          distance: 5000,
+          duration: 1800,
+          runType: "Easy Run",
+        },
+      ],
+      totalCount: 42,
+    });
+    expect(workoutsListHumanSuccessLine(200, body)).toBe(
+      [
+        "OK (HTTP 200)",
+        "1 on this page (total 42)",
+        `1. ${wid} | Morning | 2025-01-01T12:00:00Z | distance=5000 | duration=1800 | runType=Easy Run`,
+      ].join("\n"),
+    );
+  });
+
+  it("formats empty items array with total", () => {
     expect(
       workoutsListHumanSuccessLine(
         200,
         JSON.stringify({ items: [], totalCount: 0 }),
       ),
-    ).toBe("OK (HTTP 200)\nitems: []\ntotalCount: 0");
+    ).toBe("OK (HTTP 200)\n0 on this page (total 0)");
+  });
+
+  it("formats root JSON array of workouts", () => {
+    expect(
+      workoutsListHumanSuccessLine(
+        200,
+        JSON.stringify([
+          { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "Solo" },
+        ]),
+      ),
+    ).toBe(
+      [
+        "OK (HTTP 200)",
+        "1 workout(s)",
+        "1. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee | Solo",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to sorted key lines for non-list-shaped JSON object", () => {
+    expect(
+      workoutsListHumanSuccessLine(200, JSON.stringify({ foo: 1, bar: 2 })),
+    ).toBe("OK (HTTP 200)\nbar: 2\nfoo: 1");
   });
 });
 

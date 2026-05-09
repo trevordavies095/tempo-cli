@@ -70,6 +70,10 @@ The command **merges** `api_key` into existing `config.toml` and **preserves** o
 
 Global flags mirror these where useful (`--base-url`, `--api-key`, `--output`).
 
+### Human vs JSON (workout commands)
+
+With **`--output human`** (the default), workout read commands print **compact tables**: fixed columns and a row cap so large lists stay readable. That applies to **`tempo workouts list`**, **`tempo workout get`**, **`tempo workout similar-routes`**, and **`tempo workout media list`**. Use **`--output json`** when you need the **full API payload** in the usual JSON success wrapper on stdout. **`tempo workout media download`** still streams raw bytes; see **`--help`** for that command.
+
 ## API contract
 
 A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_spec.json) for tests and client generation. When Tempo publishes a canonical spec from its mainline branches, this repo should track that for compatibility notes and codegen.

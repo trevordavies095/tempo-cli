@@ -1,5 +1,10 @@
 import { createHttpClient } from "../http/client.js";
 import { humanLinesFromApiBody } from "../output/human-api-body.js";
+import {
+  compactWorkoutSummaryRow,
+  displayCellForHuman,
+  HUMAN_WORKOUT_TABLE_ROW_CAP,
+} from "../output/workout-human-rows.js";
 import { redactApiKeyInText } from "./auth-me.js";
 
 export const WORKOUTS_LIST_PATH = "/workouts";
@@ -108,13 +113,83 @@ export function workoutsListHttpErrorMessageForCli(
   );
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function pickTotalCount(obj: Record<string, unknown>): number | undefined {
+  const keys = ["totalCount", "TotalCount", "total", "Total"] as const;
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && /^\d+$/.test(v.trim())) {
+      return Number.parseInt(v.trim(), 10);
+    }
+  }
+  return undefined;
+}
+
 export function workoutsListHumanSuccessLine(
   status: number,
   body: string,
 ): string {
+  const header = `OK (HTTP ${status})`;
+  const trimmed = body.trim();
+  if (!trimmed) return header;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      const lines: string[] = [header, `${parsed.length} workout(s)`];
+      const shown = parsed.slice(0, HUMAN_WORKOUT_TABLE_ROW_CAP);
+      let i = 0;
+      for (const item of shown) {
+        i += 1;
+        if (isPlainObject(item)) {
+          lines.push(`${i}. ${compactWorkoutSummaryRow(item)}`);
+        } else {
+          lines.push(`${i}. ${displayCellForHuman(item)}`);
+        }
+      }
+      const rest = parsed.length - shown.length;
+      if (rest > 0) {
+        lines.push(`… and ${rest} more`);
+      }
+      return lines.join("\n");
+    }
+    if (isPlainObject(parsed)) {
+      const itemsRaw = parsed.items ?? parsed.Items;
+      if (Array.isArray(itemsRaw)) {
+        const lines: string[] = [header];
+        const total = pickTotalCount(parsed);
+        if (total !== undefined) {
+          lines.push(`${itemsRaw.length} on this page (total ${total})`);
+        } else {
+          lines.push(`${itemsRaw.length} workout(s)`);
+        }
+        const shown = itemsRaw.slice(0, HUMAN_WORKOUT_TABLE_ROW_CAP);
+        let i = 0;
+        for (const item of shown) {
+          i += 1;
+          if (isPlainObject(item)) {
+            lines.push(`${i}. ${compactWorkoutSummaryRow(item)}`);
+          } else {
+            lines.push(`${i}. ${displayCellForHuman(item)}`);
+          }
+        }
+        const rest = itemsRaw.length - shown.length;
+        if (rest > 0) {
+          lines.push(`… and ${rest} more`);
+        }
+        return lines.join("\n");
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const block = humanLinesFromApiBody(body);
-  if (!block) return `OK (HTTP ${status})`;
-  return `OK (HTTP ${status})\n${block}`;
+  if (!block) return header;
+  return `${header}\n${block}`;
 }
 
 export type WorkoutsListCliRawOpts = {
