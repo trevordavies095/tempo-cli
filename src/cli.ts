@@ -11,11 +11,12 @@ import {
 } from "./config/runtime.js";
 import { readKeyFromStdinIfAvailable } from "./config/stdin-key.js";
 import { persistApiKey } from "./config/write.js";
+import { writeCommandSuccess } from "./output/success.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
   readFileSync(join(__dirname, "..", "package.json"), "utf8"),
-) as { version: string; description?: string };
+) as { name?: string; version: string; description?: string };
 
 function shouldSkipConfigLoad(argv: string[]): boolean {
   const i = argv.indexOf("config");
@@ -113,6 +114,30 @@ configCmd
     if (process.platform !== "win32") {
       console.error("Set config file mode to 0600 (user read/write only).");
     }
+  });
+
+program
+  .command("version")
+  .description(
+    "Print the local CLI version (npm package). A future release may add the Tempo server version via the API.",
+  )
+  .action(function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: pickApiKey(merged.apiKey, fileLayer),
+    });
+    const name = pkg.name ?? "tempo-cli";
+    const version = pkg.version;
+    writeCommandSuccess(merged.output, `${name} ${version}`, {
+      ok: true,
+      cli: { name, version },
+    });
   });
 
 program.action(() => {
