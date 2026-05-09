@@ -11,7 +11,10 @@ import {
 } from "./config/runtime.js";
 import { readKeyFromStdinIfAvailable } from "./config/stdin-key.js";
 import { persistApiKey } from "./config/write.js";
-import { peekOutputModeFromArgv } from "./cli/argv-output-peek.js";
+import {
+  isVersionInvocation,
+  peekOutputModeFromArgv,
+} from "./cli/argv-output-peek.js";
 import { EXIT_USAGE } from "./exit/exits.js";
 import { writeOutLine, writeErrLine } from "./io/streams.js";
 import {
@@ -33,13 +36,17 @@ function shouldSkipConfigLoad(argv: string[]): boolean {
 }
 
 const configPath = getDefaultConfigPath();
-const fileLayer = shouldSkipConfigLoad(process.argv.slice(2))
+const argvSlice = process.argv.slice(2);
+const fileLayer = shouldSkipConfigLoad(argvSlice)
   ? {}
   : (() => {
       try {
         return loadConfigFile(configPath);
       } catch (e) {
-        const output = peekOutputModeFromArgv(process.argv.slice(2));
+        if (isVersionInvocation(argvSlice)) {
+          return {};
+        }
+        const output = peekOutputModeFromArgv(argvSlice);
         const message = e instanceof Error ? e.message : String(e);
         writeCommandError(output, {
           code: CLI_ERROR_CONFIG_INVALID,
@@ -158,6 +165,7 @@ program
     const version = pkg.version;
     writeCommandSuccess(merged.output, `${name} ${version}`, {
       ok: true,
+      cliVersion: version,
       cli: { name, version },
     });
   });

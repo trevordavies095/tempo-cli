@@ -129,7 +129,7 @@ Run **`tempo --help`** (or **`tempo -h`**) for global flags: **`--base-url`**, *
 **`tempo version`** prints the **local** CLI version from the npm package. With **`--output human`** (default) it prints one line (`<name> <version>`). With **`--output json`** it prints a single JSON object on **stdout**, for example:
 
 ```json
-{"ok":true,"cli":{"name":"tempo-cli","version":"0.0.0"}}
+{"ok":true,"cliVersion":"0.0.0","cli":{"name":"tempo-cli","version":"0.0.0"}}
 ```
 
 **`tempo config set-api-key`** writes an API key to the config file with restrictive permissions on Unix. **`tempo` with no arguments** prints the same help text to **stdout** and exits **0** (same as `tempo --help`). Invalid **`--output`** values (not `human` or `json`) exit **1** with an error on **stderr** (enforced by the CLI parser).

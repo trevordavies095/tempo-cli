@@ -37,6 +37,8 @@ Most invocations load `config.toml` **before** Commander runs, so invalid TOML f
 
 **Exception:** when argv is `config set-api-key` (subcommand name and `set-api-key` in the expected positions), [shouldSkipConfigLoad](../../src/cli.ts) skips the **initial** `loadConfigFile` and uses an empty file layer for Commander defaults on that run. That avoids failing during bootstrap before the subcommand runs. The action still merges into disk via [persistApiKey](../../src/config/write.ts), which parses an **existing** file if present—so corrupt on-disk TOML still errors there until the file is fixed or removed (creating a new file when none exists is fine).
 
+**`tempo version` and broken config:** if `loadConfigFile` throws but argv is a `version` invocation (see [isVersionInvocation](../../src/cli/argv-output-peek.ts), after stripping `--output` / `--base-url` / `--api-key`), the CLI treats the file layer as empty and continues so operators can still read the local CLI version. Valid `config.toml` is unchanged: file defaults still apply. `TEMPO_BASE_URL` in [computePreFlagDefaults](../../src/config/file.ts) still applies when the file layer is empty.
+
 ## Streams
 
 | Stream | Use |
@@ -95,7 +97,7 @@ Shared helper: [createHttpClient](../../src/http/client.ts). Default timeout `DE
 | Effective config / API key merge | [runtime.ts](../../src/config/runtime.ts) |
 | Persist API key | [write.ts](../../src/config/write.ts) |
 | Entry, Commander, config load skip | [cli.ts](../../src/cli.ts) |
-| Argv output peek | [argv-output-peek.ts](../../src/cli/argv-output-peek.ts) |
+| Argv output peek, `version` detection | [argv-output-peek.ts](../../src/cli/argv-output-peek.ts) (`peekOutputModeFromArgv`, `isVersionInvocation`, `stripGlobalOptionsFromArgv`) |
 | Stdout / stderr | [streams.ts](../../src/io/streams.ts) |
 | Success JSON / human | [success.ts](../../src/output/success.ts) |
 | Error JSON / human | [error.ts](../../src/output/error.ts) |
