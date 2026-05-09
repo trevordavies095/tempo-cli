@@ -94,6 +94,8 @@ Defensive layouts (camelCase first, PascalCase as a fallback; rows capped at **2
 - **`tempo shoes list`** — array of shoes → `<n> shoe(s)` plus rows `<id> | <name> | brand=<b> | model=<m> | mileage=<v>` (cap 20). Empty arrays still print `0 shoe(s)`.
 - **`tempo settings unit-preference`**, **`tempo settings default-shoe`**, **`tempo shoes mileage`** — small payloads keep the generic sorted **`key: value`** rendering after the `OK (HTTP <status>)` header.
 
+Every leaf subcommand in these groups documents itself: run **`tempo stats <command> --help`**, **`tempo settings <command> --help`**, or **`tempo shoes <command> --help`** to see the exact `GET` path it calls plus copy-paste examples with **`TEMPO_BASE_URL`** and **`TEMPO_API_KEY`**, so you can use the CLI without reading the OpenAPI spec. The parent **`tempo stats --help`** / **`tempo settings --help`** / **`tempo shoes --help`** screens enumerate available subcommands and reaffirm the read-only (GET) contract.
+
 ## API contract
 
 A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_spec.json) for tests and client generation. When Tempo publishes a canonical spec from its mainline branches, this repo should track that for compatibility notes and codegen.

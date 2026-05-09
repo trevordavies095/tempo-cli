@@ -109,6 +109,8 @@ describe("subcommand --help (P6)", () => {
   it("stats weekly --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "weekly", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats weekly");
     expect(out).toContain("GET /stats/weekly");
@@ -118,6 +120,8 @@ describe("subcommand --help (P6)", () => {
   it("stats yearly --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "yearly", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats yearly");
     expect(out).toContain("GET /stats/yearly");
@@ -127,6 +131,8 @@ describe("subcommand --help (P6)", () => {
   it("stats yearly-weekly --help documents path, flags, env, and globals", () => {
     const out = helpFor(["stats", "yearly-weekly", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats yearly-weekly");
     expect(out).toContain("GET /stats/yearly-weekly");
@@ -137,6 +143,8 @@ describe("subcommand --help (P6)", () => {
   it("stats --help lists all subcommands and globals hint", () => {
     const out = helpFor(["stats", "--help"]);
     expect(out).toContain("tempo --help");
+    expect(out).toContain("tempo stats <command> --help");
+    expect(out).toContain("read-only (GET)");
     expect(out).toContain("Subcommands:");
     expect(out).toContain("weekly");
     expect(out).toContain("yearly");
@@ -151,6 +159,8 @@ describe("subcommand --help (P6)", () => {
   it("stats relative-effort --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "relative-effort", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats relative-effort");
     expect(out).toContain("GET /stats/relative-effort");
@@ -160,6 +170,8 @@ describe("subcommand --help (P6)", () => {
   it("stats best-efforts --help documents path, GET-only, env, and globals", () => {
     const out = helpFor(["stats", "best-efforts", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats best-efforts");
     expect(out).toContain("GET /stats/best-efforts");
@@ -169,6 +181,8 @@ describe("subcommand --help (P6)", () => {
   it("stats available-periods --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "available-periods", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats available-periods");
     expect(out).toContain("GET /stats/available-periods");
@@ -178,6 +192,8 @@ describe("subcommand --help (P6)", () => {
   it("stats available-years --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "available-years", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats available-years");
     expect(out).toContain("GET /stats/available-years");
@@ -186,6 +202,8 @@ describe("subcommand --help (P6)", () => {
   it("stats insights --help documents path, env, and globals", () => {
     const out = helpFor(["stats", "insights", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("stats insights");
     expect(out).toContain("GET /stats/insights");
@@ -194,6 +212,8 @@ describe("subcommand --help (P6)", () => {
   it("settings --help lists subcommands and GET-only contract", () => {
     const out = helpFor(["settings", "--help"]);
     expect(out).toContain("tempo --help");
+    expect(out).toContain("tempo settings <command> --help");
+    expect(out).toContain("read-only (GET)");
     expect(out).toContain("Subcommands:");
     expect(out).toContain("heart-rate-zones");
     expect(out).toContain("unit-preference");
@@ -204,6 +224,8 @@ describe("subcommand --help (P6)", () => {
   it("settings heart-rate-zones --help documents path, GET-only, env, and globals", () => {
     const out = helpFor(["settings", "heart-rate-zones", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("settings heart-rate-zones");
     expect(out).toContain("GET /settings/heart-rate-zones");
@@ -214,6 +236,8 @@ describe("subcommand --help (P6)", () => {
   it("settings unit-preference --help documents path, GET-only, env, and globals", () => {
     const out = helpFor(["settings", "unit-preference", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("settings unit-preference");
     expect(out).toContain("GET /settings/unit-preference");
@@ -223,6 +247,8 @@ describe("subcommand --help (P6)", () => {
   it("settings default-shoe --help documents path, GET-only, env, and globals", () => {
     const out = helpFor(["settings", "default-shoe", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("settings default-shoe");
     expect(out).toContain("GET /settings/default-shoe");
@@ -232,6 +258,8 @@ describe("subcommand --help (P6)", () => {
   it("shoes --help lists subcommands, GET-only contract, and no shoes get", () => {
     const out = helpFor(["shoes", "--help"]);
     expect(out).toContain("tempo --help");
+    expect(out).toContain("tempo shoes <command> --help");
+    expect(out).toContain("read-only (GET)");
     expect(out).toContain("Subcommands:");
     expect(out).toContain("list");
     expect(out).toContain("mileage");
@@ -244,6 +272,8 @@ describe("subcommand --help (P6)", () => {
   it("shoes list --help documents path, GET-only, env, and globals", () => {
     const out = helpFor(["shoes", "list", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("shoes list");
     expect(out).toContain("GET /shoes");
@@ -253,6 +283,8 @@ describe("subcommand --help (P6)", () => {
   it("shoes mileage --help documents path, UUID arg, env, and globals", () => {
     const out = helpFor(["shoes", "mileage", "--help"]);
     expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
     expect(out).toContain("tempo --help");
     expect(out).toContain("shoes mileage");
     expect(out).toContain("GET /shoes/{id}/mileage");
