@@ -190,4 +190,42 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("stats insights");
     expect(out).toContain("GET /stats/insights");
   });
+
+  it("settings --help lists subcommands and GET-only contract", () => {
+    const out = helpFor(["settings", "--help"]);
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("Subcommands:");
+    expect(out).toContain("heart-rate-zones");
+    expect(out).toContain("unit-preference");
+    expect(out).toContain("default-shoe");
+    expect(out).toContain("never calls PUT/POST");
+  });
+
+  it("settings heart-rate-zones --help documents path, GET-only, env, and globals", () => {
+    const out = helpFor(["settings", "heart-rate-zones", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("settings heart-rate-zones");
+    expect(out).toContain("GET /settings/heart-rate-zones");
+    expect(out).toContain("no PUT");
+    expect(out).toContain("update-with-recalc");
+  });
+
+  it("settings unit-preference --help documents path, GET-only, env, and globals", () => {
+    const out = helpFor(["settings", "unit-preference", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("settings unit-preference");
+    expect(out).toContain("GET /settings/unit-preference");
+    expect(out).toContain("no PUT");
+  });
+
+  it("settings default-shoe --help documents path, GET-only, env, and globals", () => {
+    const out = helpFor(["settings", "default-shoe", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("settings default-shoe");
+    expect(out).toContain("GET /settings/default-shoe");
+    expect(out).toContain("no PUT");
+  });
 });

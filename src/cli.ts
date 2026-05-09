@@ -121,6 +121,24 @@ import {
   statsInsightsHttpErrorMessageForCli,
 } from "./commands/stats-insights.js";
 import {
+  SETTINGS_HEART_RATE_ZONES_PATH,
+  probeSettingsHeartRateZones,
+  settingsHeartRateZonesHumanSuccessLine,
+  settingsHeartRateZonesHttpErrorMessageForCli,
+} from "./commands/settings-heart-rate-zones.js";
+import {
+  SETTINGS_UNIT_PREFERENCE_PATH,
+  probeSettingsUnitPreference,
+  settingsUnitPreferenceHumanSuccessLine,
+  settingsUnitPreferenceHttpErrorMessageForCli,
+} from "./commands/settings-unit-preference.js";
+import {
+  SETTINGS_DEFAULT_SHOE_PATH,
+  probeSettingsDefaultShoe,
+  settingsDefaultShoeHumanSuccessLine,
+  settingsDefaultShoeHttpErrorMessageForCli,
+} from "./commands/settings-default-shoe.js";
+import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
   EXIT_USAGE,
@@ -1684,6 +1702,234 @@ statsCmd.addHelpText(
 Subcommands: weekly, yearly, yearly-weekly, relative-effort, best-efforts, available-periods, available-years, insights. Run tempo stats <command> --help for each.
 
 All stats commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+);
+
+const settingsCmd = program
+  .command("settings")
+  .description("Read-only Tempo settings commands (GET only).");
+
+settingsCmd
+  .command("heart-rate-zones")
+  .description(
+    "GET /settings/heart-rate-zones — current HR zones (read-only; never updates or recalculates).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo settings heart-rate-zones
+  tempo --output json settings heart-rate-zones
+
+This command only performs GET. It does not update settings (no PUT) and does not recalculate relative effort (no POST /settings/heart-rate-zones/update-with-recalc).
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo settings heart-rate-zones: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeSettingsHeartRateZones(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        settingsHeartRateZonesHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: SETTINGS_HEART_RATE_ZONES_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: settingsHeartRateZonesHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+settingsCmd
+  .command("unit-preference")
+  .description(
+    "GET /settings/unit-preference — stored unit preference (read-only; never updates).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo settings unit-preference
+  tempo --output json settings unit-preference
+
+This command only performs GET. It does not update the unit preference (no PUT).
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo settings unit-preference: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeSettingsUnitPreference(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        settingsUnitPreferenceHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: SETTINGS_UNIT_PREFERENCE_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: settingsUnitPreferenceHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+settingsCmd
+  .command("default-shoe")
+  .description(
+    "GET /settings/default-shoe — current default shoe or null (read-only; never updates).",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo settings default-shoe
+  tempo --output json settings default-shoe
+
+This command only performs GET. It does not update or clear the default shoe (no PUT).
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo settings default-shoe: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeSettingsDefaultShoe(merged.baseUrl, key);
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        settingsDefaultShoeHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: SETTINGS_DEFAULT_SHOE_PATH,
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: settingsDefaultShoeHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+settingsCmd.addHelpText(
+  "after",
+  `
+Subcommands: heart-rate-zones, unit-preference, default-shoe. Run tempo settings <command> --help for each.
+
+All settings commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config). The CLI never calls PUT/POST under /settings/* (no updates, no recalculate).
 
 ${HELP_GLOBALS_HINT}
 `,
