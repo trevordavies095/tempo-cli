@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import { stringify as stringifyYaml } from "yaml";
 import { computePreFlagDefaults, loadConfigFile } from "./config/file.js";
-import { getDefaultTempoCacheDir } from "./config/cache-path.js";
 import {
   expandUserHomePath,
   getDefaultPrescribedFilePath,
 } from "./config/prescribed-path.js";
+import { resolveRecapCacheDir } from "./config/recap-paths.js";
 import { getDefaultSubjectiveFilePath } from "./config/subjective-path.js";
 import { getDefaultConfigPath } from "./config/path.js";
 import {
@@ -2205,12 +2205,21 @@ program
   )
   .option(
     "--include-trends",
-    "Include §2.7 rolling trends (extra GET /workouts for mon−21d…sun−7d). Default: on.",
-    true,
+    "Include §2.7 rolling trends (extra GET /workouts for mon−21d…sun−7d). Default: on or from config [report].include_trends.",
+    fileLayer.report?.includeTrends ?? true,
   )
   .option(
     "--no-include-trends",
     "Skip §2.7 trends for a faster run (no extra workouts list).",
+  )
+  .option(
+    "--cache-dir <path>",
+    "Directory for best-efforts JSON cache (overrides config [report].cache_dir).",
+  )
+  .option(
+    "--verbose",
+    "Log resolved paths and recap steps to stderr only.",
+    false,
   )
   .option(
     "--prescribed-file <path>",
@@ -2254,17 +2263,32 @@ ${HELP_GLOBALS_HINT}
       prescribedFile?: string;
       subjectiveFile?: string;
       subjective: boolean;
+      cacheDir?: string;
+      verbose: boolean;
     };
 
-    const tzRaw = merged.timezone?.trim();
+    const tzFromFlag = merged.timezone?.trim();
+    const tzFromConfig = fileLayer.timezone?.trim();
+    const tzCandidate =
+      tzFromFlag && tzFromFlag.length > 0
+        ? tzFromFlag
+        : tzFromConfig && tzFromConfig.length > 0
+          ? tzFromConfig
+          : "";
     const tz =
-      tzRaw !== undefined && tzRaw.length > 0 ? tzRaw : getSystemTimeZone();
+      tzCandidate.length > 0 ? tzCandidate : getSystemTimeZone();
     if (!isValidIanaTimeZone(tz)) {
       writeCommandError(merged.output, {
         code: CLI_ERROR_INVALID_ARGUMENTS,
-        message: `tempo weekly-recap: invalid IANA timezone: ${tzRaw ?? ""}`,
+        message: `tempo weekly-recap: invalid IANA timezone: ${tzCandidate}`,
       });
       process.exit(EXIT_USAGE);
+    }
+
+    if (merged.verbose) {
+      writeErrLine(
+        `tempo weekly-recap: timezone=${tz}${tzCandidate.length === 0 ? " (system default)" : ""}`,
+      );
     }
 
     const resolved = resolveRecapWeek({
@@ -2324,6 +2348,12 @@ ${HELP_GLOBALS_HINT}
         ),
       });
       process.exit(exitCodeForFetchFailure(authResult.error));
+    }
+
+    if (merged.verbose) {
+      writeErrLine(
+        `tempo weekly-recap: GET ${AUTH_ME_PATH} OK (HTTP ${authResult.status})`,
+      );
     }
 
     const [hrRes, unitRes] = await Promise.all([
@@ -2395,6 +2425,12 @@ ${HELP_GLOBALS_HINT}
 
     const v = resolved.value;
 
+    if (merged.verbose) {
+      writeErrLine(
+        `tempo weekly-recap: week ${v.isoWeekId} (${v.localRange.start}–${v.localRange.end})`,
+      );
+    }
+
     const trendUtc = resolveTrendWorkoutListUtcBounds(v, tz);
 
     const [fetchData, trendListRes, ywRes, reRes, beRes] = await Promise.all([
@@ -2456,6 +2492,12 @@ ${HELP_GLOBALS_HINT}
       );
     }
 
+    if (merged.verbose) {
+      writeErrLine(
+        `tempo weekly-recap: workouts list rows=${fetchData.listItemCount}, detail bodies=${fetchData.workoutDetails.length}`,
+      );
+    }
+
     const zoneSummary = formatRecapZonesSummary(zonesParsed.zones);
 
     let shoesHuman = `Shoes: OK (HTTP ${fetchData.shoesStatus})`;
@@ -2485,8 +2527,14 @@ ${HELP_GLOBALS_HINT}
 
     const prescribedPathResolved = expandUserHomePath(
       merged.prescribedFile?.trim() ||
-        getDefaultPrescribedFilePath(v.isoWeekId),
+        getDefaultPrescribedFilePath(
+          v.isoWeekId,
+          fileLayer.report?.prescribedDir,
+        ),
     );
+    if (merged.verbose) {
+      writeErrLine(`tempo weekly-recap: prescribed file ${prescribedPathResolved}`);
+    }
     let prescribedRaw: string | undefined;
     try {
       prescribedRaw = await readFile(prescribedPathResolved, "utf8");
@@ -2531,7 +2579,13 @@ ${HELP_GLOBALS_HINT}
       runCount: fetchData.workoutDetails.length,
     });
 
-    const cacheDir = getDefaultTempoCacheDir();
+    const cacheDir = resolveRecapCacheDir({
+      cacheDirFlag: merged.cacheDir,
+      reportCacheDir: fileLayer.report?.cacheDir,
+    });
+    if (merged.verbose) {
+      writeErrLine(`tempo weekly-recap: cache dir ${cacheDir}`);
+    }
     const priorWeekId = priorIsoWeekId(v, tz);
     let priorBestEffortsBody: string | undefined;
     let hadPriorCache = false;
@@ -2542,6 +2596,11 @@ ${HELP_GLOBALS_HINT}
     } catch {
       priorBestEffortsBody = undefined;
       hadPriorCache = false;
+    }
+    if (merged.verbose) {
+      writeErrLine(
+        `tempo weekly-recap: prior best-efforts cache ${hadPriorCache ? "read" : "missing"} (${join(cacheDir, `best-efforts-${priorWeekId}.json`)})`,
+      );
     }
 
     const beOk = beRes.kind === "ok";
@@ -2563,10 +2622,14 @@ ${HELP_GLOBALS_HINT}
     if (beOk && currentBestEffortsBody?.trim()) {
       try {
         await mkdir(cacheDir, { recursive: true });
+        const bePath = join(cacheDir, `best-efforts-${v.isoWeekId}.json`);
         await atomicWriteFile(
-          join(cacheDir, `best-efforts-${v.isoWeekId}.json`),
+          bePath,
           new TextEncoder().encode(currentBestEffortsBody),
         );
+        if (merged.verbose) {
+          writeErrLine(`tempo weekly-recap: wrote best-efforts cache ${bePath}`);
+        }
       } catch {
         /* best-efforts cache write is non-fatal */
       }
@@ -2616,8 +2679,11 @@ ${HELP_GLOBALS_HINT}
     } else {
       const subjectivePathResolved = expandUserHomePath(
         merged.subjectiveFile?.trim() ||
-          getDefaultSubjectiveFilePath(v.isoWeekId),
+          getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir),
       );
+      if (merged.verbose) {
+        writeErrLine(`tempo weekly-recap: subjective file ${subjectivePathResolved}`);
+      }
       let rawSub: string | undefined;
       try {
         rawSub = await readFile(subjectivePathResolved, "utf8");
@@ -2650,7 +2716,7 @@ ${HELP_GLOBALS_HINT}
           stdin: process.stdin,
           stdout: process.stdout,
         });
-        const savePath = getDefaultSubjectiveFilePath(v.isoWeekId);
+        const savePath = getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir);
         try {
           await mkdir(dirname(savePath), { recursive: true });
           await atomicWriteFile(
@@ -2687,7 +2753,7 @@ ${HELP_GLOBALS_HINT}
           parseError,
           interactiveSaved,
           savePath: interactiveSaved
-            ? getDefaultSubjectiveFilePath(v.isoWeekId)
+            ? getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir)
             : undefined,
           week: subjectiveDoc.week,
           runs: runsInWeek,

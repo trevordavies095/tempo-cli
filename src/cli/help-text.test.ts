@@ -321,5 +321,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("--prescribed-file");
     expect(out).toContain("--subjective-file");
     expect(out).toContain("--no-subjective");
+    expect(out).toContain("--verbose");
+    expect(out).toContain("--cache-dir");
   });
 });

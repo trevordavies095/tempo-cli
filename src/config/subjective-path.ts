@@ -1,9 +1,19 @@
 import { dirname, join } from "node:path";
 
 import { getDefaultConfigPath } from "./path.js";
+import { expandUserHomePath } from "./prescribed-path.js";
 
-/** Default `subjective-{YYYY-Www}.yaml` beside config (weekly recap spec §3.3). */
-export function getDefaultSubjectiveFilePath(isoWeekId: string): string {
-  const tempoDir = dirname(getDefaultConfigPath());
-  return join(tempoDir, `subjective-${isoWeekId}.yaml`);
+/**
+ * Default `subjective-{YYYY-Www}.yaml` beside `config.toml`, or under `subjectiveDir`
+ * when set (config `[report].subjective_dir`).
+ */
+export function getDefaultSubjectiveFilePath(
+  isoWeekId: string,
+  subjectiveDir?: string,
+): string {
+  const base =
+    subjectiveDir?.trim() !== undefined && subjectiveDir.trim() !== ""
+      ? expandUserHomePath(subjectiveDir.trim())
+      : dirname(getDefaultConfigPath());
+  return join(base, `subjective-${isoWeekId}.yaml`);
 }

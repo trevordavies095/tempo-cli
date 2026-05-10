@@ -3,11 +3,22 @@ import { parse } from "smol-toml";
 
 export type OutputMode = "human" | "json";
 
+/** Optional `[report]` table for `tempo weekly-recap` (spec §3.11-style sidecars and cache). */
+export type ReportLayer = {
+  includeTrends?: boolean;
+  prescribedDir?: string;
+  subjectiveDir?: string;
+  cacheDir?: string;
+};
+
 /** Values read from config.toml (optional keys). */
 export type FileLayer = {
   baseUrl?: string;
   output?: OutputMode;
   apiKey?: string;
+  /** Default IANA zone when `weekly-recap --timezone` is omitted. */
+  timezone?: string;
+  report?: ReportLayer;
 };
 
 const BUILTIN_BASE_URL = "http://localhost:5001";
@@ -71,6 +82,65 @@ export function loadConfigFile(configPath: string): FileLayer {
     }
     const k = table.api_key.trim();
     if (k) layer.apiKey = k;
+  }
+
+  if ("timezone" in table && table.timezone != null) {
+    if (typeof table.timezone !== "string") {
+      throw new Error(`Invalid "timezone" in ${configPath}: expected a string.`);
+    }
+    const tz = table.timezone.trim();
+    if (tz) layer.timezone = tz;
+  }
+
+  if ("report" in table && table.report != null) {
+    if (typeof table.report !== "object" || Array.isArray(table.report)) {
+      throw new Error(
+        `Invalid "report" in ${configPath}: expected a table (use [report]).`,
+      );
+    }
+    const rep = table.report as Record<string, unknown>;
+    const report: ReportLayer = {};
+
+    if ("include_trends" in rep && rep.include_trends != null) {
+      if (typeof rep.include_trends !== "boolean") {
+        throw new Error(
+          `Invalid "report.include_trends" in ${configPath}: expected a boolean.`,
+        );
+      }
+      report.includeTrends = rep.include_trends;
+    }
+
+    if ("prescribed_dir" in rep && rep.prescribed_dir != null) {
+      if (typeof rep.prescribed_dir !== "string") {
+        throw new Error(
+          `Invalid "report.prescribed_dir" in ${configPath}: expected a string.`,
+        );
+      }
+      const d = rep.prescribed_dir.trim();
+      if (d) report.prescribedDir = d;
+    }
+
+    if ("subjective_dir" in rep && rep.subjective_dir != null) {
+      if (typeof rep.subjective_dir !== "string") {
+        throw new Error(
+          `Invalid "report.subjective_dir" in ${configPath}: expected a string.`,
+        );
+      }
+      const d = rep.subjective_dir.trim();
+      if (d) report.subjectiveDir = d;
+    }
+
+    if ("cache_dir" in rep && rep.cache_dir != null) {
+      if (typeof rep.cache_dir !== "string") {
+        throw new Error(
+          `Invalid "report.cache_dir" in ${configPath}: expected a string.`,
+        );
+      }
+      const d = rep.cache_dir.trim();
+      if (d) report.cacheDir = d;
+    }
+
+    layer.report = report;
   }
 
   return layer;

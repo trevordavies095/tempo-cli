@@ -35,7 +35,7 @@ Optional **`config.toml`** supplies defaults before environment variables and CL
 | Unix / macOS | `$XDG_CONFIG_HOME/tempo/config.toml`, or `~/.config/tempo/config.toml` if `XDG_CONFIG_HOME` is unset |
 | Windows | `%APPDATA%\tempo\config.toml` (typically `~\AppData\Roaming\tempo\config.toml`) |
 
-Optional keys (all strings except `output`): **`base_url`**, **`output`** (`human` or `json`), **`api_key`**. Keys are **admin-issued in Tempo**; this CLI does not create keys or prompt for them interactively.
+Optional keys (all strings except `output` / booleans under `[report]`): **`base_url`**, **`output`** (`human` or `json`), **`api_key`**, **`timezone`** (IANA name used as the default for **`tempo weekly-recap`** when **`--timezone`** is omitted). Keys are **admin-issued in Tempo**; this CLI does not create keys or prompt for them interactively.
 
 **Precedence** (later wins): built-in defaults, then config file, then environment, then explicit CLI flags. So **`TEMPO_*` overrides the file** when a flag is not passed.
 
@@ -45,9 +45,35 @@ Example:
 base_url = "http://localhost:5001"
 output = "human"
 # api_key = "tmp_..."   # optional; prefer env in CI
+# timezone = "America/New_York"   # optional default for weekly-recap --timezone
 ```
 
 Invalid TOML or an invalid `output` value causes the CLI to exit with an error on stderr.
+
+### Weekly recap paths (`[report]`)
+
+For **`tempo weekly-recap`**, optional **`[report]`** supplies defaults that flags override:
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `include_trends` | boolean | Default for **`--include-trends`** when neither **`--include-trends`** nor **`--no-include-trends`** is passed (Commander still applies explicit flags). |
+| `prescribed_dir` | string | Directory for default **`prescribed-{YYYY-Www}.yaml`** when **`--prescribed-file`** is omitted (otherwise defaults next to `config.toml`). |
+| `subjective_dir` | string | Directory for default **`subjective-{YYYY-Www}.yaml`** when **`--subjective-file`** is omitted. |
+| `cache_dir` | string | Directory for best-efforts JSON snapshots; overridden by **`tempo weekly-recap --cache-dir`**. If unset, defaults to **`$XDG_CACHE_HOME/tempo`** or **`~/.cache/tempo`** on Unix when **`XDG_CACHE_HOME`** is unset (see implementation for Windows). |
+
+**`--verbose`** on **`tempo weekly-recap`** prints resolved paths and step summaries to **stderr only**, never stdout.
+
+Example:
+
+```toml
+timezone = "America/Chicago"
+
+[report]
+include_trends = false
+prescribed_dir = "~/running/prescribed"
+subjective_dir = "~/running/subjective"
+cache_dir = "~/.cache/tempo"
+```
 
 ### Saving an API key to the config file
 

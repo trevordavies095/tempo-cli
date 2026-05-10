@@ -3,10 +3,19 @@ import { dirname, join } from "node:path";
 
 import { getDefaultConfigPath } from "./path.js";
 
-/** Default `prescribed-{YYYY-Www}.yaml` next to `config.toml` (weekly recap spec §3.2 / §3.3). */
-export function getDefaultPrescribedFilePath(isoWeekId: string): string {
-  const tempoDir = dirname(getDefaultConfigPath());
-  return join(tempoDir, `prescribed-${isoWeekId}.yaml`);
+/**
+ * Default `prescribed-{YYYY-Www}.yaml` beside `config.toml`, or under `prescribedDir`
+ * when set (config `[report].prescribed_dir`).
+ */
+export function getDefaultPrescribedFilePath(
+  isoWeekId: string,
+  prescribedDir?: string,
+): string {
+  const base =
+    prescribedDir?.trim() !== undefined && prescribedDir.trim() !== ""
+      ? expandUserHomePath(prescribedDir.trim())
+      : dirname(getDefaultConfigPath());
+  return join(base, `prescribed-${isoWeekId}.yaml`);
 }
 
 /** Expand leading `~` to the user home directory (Unix-style paths). */
