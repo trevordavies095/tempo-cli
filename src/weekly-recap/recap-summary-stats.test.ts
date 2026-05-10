@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRecapSummaryFromStats,
   computeWeeklyRollup,
+  findYearlyWeeklyBucketIndexForRecapMonday,
   normalizeWeekStartYmd,
   parseRelativeEffortSummary,
   parseYearlyWeeklyBuckets,
@@ -46,6 +47,42 @@ describe("parseYearlyWeeklyBuckets", () => {
     expect(b).toHaveLength(1);
     expect(b[0]!.distanceM).toBe(30000);
   });
+
+  it("omits runs when API does not send count (does not default to 0)", () => {
+    const b = parseYearlyWeeklyBuckets(
+      JSON.stringify([{ weekStart: "2026-05-04", distance: 30000 }]),
+    );
+    expect(b).toHaveLength(1);
+    expect(b[0]!.distanceM).toBe(30000);
+    expect(b[0]!.runs).toBeUndefined();
+  });
+
+  it("keeps explicit zero run count from API", () => {
+    const b = parseYearlyWeeklyBuckets(
+      JSON.stringify([{ weekStart: "2026-05-04", distance: 30000, count: 0 }]),
+    );
+    expect(b[0]!.runs).toBe(0);
+  });
+});
+
+describe("findYearlyWeeklyBucketIndexForRecapMonday", () => {
+  it("matches exact bucket weekStart", () => {
+    const buckets = parseYearlyWeeklyBuckets(
+      JSON.stringify([{ weekStart: "2026-05-04", distance: 1, count: 1 }]),
+    );
+    expect(findYearlyWeeklyBucketIndexForRecapMonday("2026-05-04", buckets)).toBe(
+      0,
+    );
+  });
+
+  it("matches when recap Monday falls in bucket 7-day window but differs from weekStart", () => {
+    const buckets = parseYearlyWeeklyBuckets(
+      JSON.stringify([{ weekStart: "2026-04-26", distance: 1, count: 1 }]),
+    );
+    expect(findYearlyWeeklyBucketIndexForRecapMonday("2026-04-27", buckets)).toBe(
+      0,
+    );
+  });
 });
 
 describe("computeWeeklyRollup", () => {
@@ -65,11 +102,60 @@ describe("computeWeeklyRollup", () => {
     expect(roll?.threeWkAvg?.runs).toBeCloseTo((3 + 4 + 4) / 3);
   });
 
+  it("resolves rollup when API weekStart is offset from ISO Monday within same week window", () => {
+    const buckets = parseYearlyWeeklyBuckets(
+      JSON.stringify([
+        { weekStart: "2026-04-13", distance: 20000, count: 3 },
+        { weekStart: "2026-04-26", distance: 24000, count: 4 },
+      ]),
+    );
+    const resolvedW18: RecapWeekResolved = {
+      isoWeekId: "2026-W18",
+      localRange: { start: "2026-04-27", end: "2026-05-03" },
+      utcStartDate: "",
+      utcEndDate: "",
+      timezoneOffsetMinutes: -240,
+    };
+    const roll = computeWeeklyRollup(resolvedW18, buckets);
+    expect(roll?.prev?.distanceM).toBe(20000);
+    expect(roll?.prev?.runs).toBe(3);
+    expect(roll?.threeWkAvg?.distanceM).toBe(20000);
+    expect(roll?.threeWkAvg?.runs).toBe(3);
+  });
+
   it("returns undefined when recap Monday is missing from buckets", () => {
     const buckets = parseYearlyWeeklyBuckets(
       JSON.stringify([{ weekStart: "2026-04-27", distance: 1000, count: 1 }]),
     );
     expect(computeWeeklyRollup(resolvedMay2026, buckets)).toBeUndefined();
+  });
+
+  it("leaves prev.runs undefined when prior bucket has distance but no count", () => {
+    const buckets = parseYearlyWeeklyBuckets(
+      JSON.stringify([
+        { weekStart: "2026-04-27", distance: 24000 },
+        { weekStart: "2026-05-04", distance: 26000, count: 5 },
+      ]),
+    );
+    const roll = computeWeeklyRollup(resolvedMay2026, buckets);
+    expect(roll?.prev?.distanceM).toBe(24000);
+    expect(roll?.prev?.runs).toBeUndefined();
+    expect(roll?.threeWkAvg?.distanceM).toBe(24000);
+    expect(roll?.threeWkAvg?.runs).toBeUndefined();
+  });
+
+  it("averages distance only over buckets that report distance", () => {
+    const buckets = parseYearlyWeeklyBuckets(
+      JSON.stringify([
+        { weekStart: "2026-04-13", count: 2 },
+        { weekStart: "2026-04-20", distance: 20000, count: 2 },
+        { weekStart: "2026-04-27", distance: 24000, count: 4 },
+        { weekStart: "2026-05-04", distance: 26000, count: 5 },
+      ]),
+    );
+    const roll = computeWeeklyRollup(resolvedMay2026, buckets);
+    expect(roll?.threeWkAvg?.distanceM).toBeCloseTo((20000 + 24000) / 2);
+    expect(roll?.threeWkAvg?.runs).toBeCloseTo((2 + 2 + 4) / 3);
   });
 });
 
@@ -123,6 +209,30 @@ describe("buildRecapSummaryFromStats", () => {
     expect(s.relativeEffort.prev).toBe(245);
     expect(s.relativeEffort.threeWkAvg).toBe(230);
     expect(s.relativeEffort.deltaVsThreeWk).toBe(287 - 230);
+  });
+
+  it("does not set runs prev or run deltas when yearly-weekly omits counts", () => {
+    const yw = JSON.stringify([
+      { weekStart: "2026-04-27", distance: 24000 },
+      { weekStart: "2026-05-04", distance: 45600, count: 5 },
+    ]);
+    const s = buildRecapSummaryFromStats({
+      resolved: resolvedMay2026,
+      yearlyWeeklyBody: yw,
+      yearlyWeeklyOk: true,
+      relativeEffortOk: false,
+      workoutDistanceM: 45600,
+      workoutDurationS: 10_000,
+      workoutElevM: 100,
+      workoutReSum: 250,
+      runCount: 5,
+    });
+    expect(s.mileage.prevDistanceM).toBe(24000);
+    expect(s.mileage.threeWkAvgDistanceM).toBe(24000);
+    expect(s.mileage.deltaVsThreeWkM).toBeCloseTo(45600 - 24000);
+    expect(s.runs.prev).toBeUndefined();
+    expect(s.runs.threeWkAvg).toBeUndefined();
+    expect(s.runs.deltaVsThreeWk).toBeUndefined();
   });
 
   it("degrades when yearly-weekly fails", () => {

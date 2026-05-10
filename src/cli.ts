@@ -175,7 +175,11 @@ import {
   buildWeeklyRecapMarkdownCore,
 } from "./weekly-recap/markdown-report.js";
 import { buildWeeklyRecapReportPayload } from "./weekly-recap/recap-json-report.js";
-import { buildRecapSummaryFromStats } from "./weekly-recap/recap-summary-stats.js";
+import {
+  buildRecapSummaryFromStats,
+  findYearlyWeeklyBucketIndexForRecapMonday,
+  parseYearlyWeeklyBuckets,
+} from "./weekly-recap/recap-summary-stats.js";
 import {
   formatRecapZonesSummary,
   parseAndValidateHeartRateZones,
@@ -2564,6 +2568,53 @@ ${HELP_GLOBALS_HINT}
     const yearlyWeeklyBody = yearlyWeeklyOk ? ywRes.body : undefined;
     const relativeEffortOk = reRes.kind === "ok";
     const relativeEffortBody = relativeEffortOk ? reRes.body : undefined;
+
+    if (merged.verbose) {
+      const ywQuery = {
+        periodEndDate: v.localRange.end,
+        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      };
+      const ywPath = buildStatsYearlyWeeklyPath(ywQuery);
+      if (ywRes.kind === "ok") {
+        writeErrLine(
+          `tempo weekly-recap: GET ${ywPath} OK (HTTP ${ywRes.status})`,
+        );
+      } else if (ywRes.kind === "http") {
+        writeErrLine(`tempo weekly-recap: GET ${ywPath} HTTP ${ywRes.status}`);
+      } else {
+        writeErrLine(
+          `tempo weekly-recap: GET ${ywPath} transport: ${transportErrorMessage(ywRes.error)}`,
+        );
+      }
+
+      const rePath = buildStatsRelativeEffortPath({
+        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      });
+      if (reRes.kind === "ok") {
+        writeErrLine(
+          `tempo weekly-recap: GET ${rePath} OK (HTTP ${reRes.status})`,
+        );
+      } else if (reRes.kind === "http") {
+        writeErrLine(`tempo weekly-recap: GET ${rePath} HTTP ${reRes.status}`);
+      } else {
+        writeErrLine(
+          `tempo weekly-recap: GET ${rePath} transport: ${transportErrorMessage(reRes.error)}`,
+        );
+      }
+
+      if (yearlyWeeklyOk && yearlyWeeklyBody !== undefined) {
+        const buckets = parseYearlyWeeklyBuckets(yearlyWeeklyBody);
+        const idx = findYearlyWeeklyBucketIndexForRecapMonday(
+          v.localRange.start,
+          buckets,
+        );
+        const first = buckets[0]?.weekStartYmd;
+        const last = buckets[buckets.length - 1]?.weekStartYmd;
+        writeErrLine(
+          `tempo weekly-recap: yearly-weekly rollup: buckets=${buckets.length} span ${first ?? "n/a"}…${last ?? "n/a"}; recapMonday=${v.localRange.start} matchedIndex=${idx}`,
+        );
+      }
+    }
 
     const agg = aggregateSummaryStatsFromDetails(fetchData.workoutDetails);
     const summaryFromStats = buildRecapSummaryFromStats({

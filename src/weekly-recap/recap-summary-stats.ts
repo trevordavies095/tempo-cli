@@ -13,10 +13,10 @@ import type { RecapWeekResolved } from "./resolve-week.js";
 const METERS_PER_MILE = 1609.344;
 
 export type YearlyWeeklyBucketParsed = {
-  /** Normalized Monday yyyy-MM-dd */
+  /** Normalized yyyy-MM-dd bucket start from API (often Monday; Tempo may offset within the ISO week). */
   weekStartYmd: string;
-  distanceM: number;
-  runs: number;
+  distanceM?: number;
+  runs?: number;
   durationS?: number;
   elevGainM?: number;
 };
@@ -178,14 +178,22 @@ export function parseYearlyWeeklyBuckets(body: string): YearlyWeeklyBucketParsed
     if (!weekStartYmd) continue;
     const distanceM = pickBucketDistanceM(row);
     const runs = pickBucketRunCount(row);
-    if (distanceM === undefined && runs === undefined) continue;
-    out.push({
-      weekStartYmd,
-      distanceM: distanceM ?? 0,
-      runs: runs ?? 0,
-      durationS: pickBucketDurationS(row),
-      elevGainM: pickBucketElevM(row),
-    });
+    const durationS = pickBucketDurationS(row);
+    const elevGainM = pickBucketElevM(row);
+    if (
+      distanceM === undefined &&
+      runs === undefined &&
+      durationS === undefined &&
+      elevGainM === undefined
+    ) {
+      continue;
+    }
+    const bucket: YearlyWeeklyBucketParsed = { weekStartYmd };
+    if (distanceM !== undefined) bucket.distanceM = distanceM;
+    if (runs !== undefined) bucket.runs = runs;
+    if (durationS !== undefined) bucket.durationS = durationS;
+    if (elevGainM !== undefined) bucket.elevGainM = elevGainM;
+    out.push(bucket);
   }
 
   out.sort((a, b) => a.weekStartYmd.localeCompare(b.weekStartYmd));
@@ -194,40 +202,65 @@ export function parseYearlyWeeklyBuckets(body: string): YearlyWeeklyBucketParsed
 
 export type WeeklyRollup = {
   prev?: {
-    distanceM: number;
-    runs: number;
+    distanceM?: number;
+    runs?: number;
     durationS?: number;
     elevGainM?: number;
   };
   threeWkAvg?: {
-    distanceM: number;
-    runs: number;
+    distanceM?: number;
+    runs?: number;
     durationS?: number;
     elevGainM?: number;
   };
 };
 
 /**
- * Find recap week's bucket by Monday date; prev = prior bucket; 3-wk avg = mean of up to
- * three buckets immediately before the recap week (indices i−3…i−1 when present).
+ * Index of the yearly-weekly bucket whose 7-day civil window contains the recap week's Monday.
+ * Tempo's 52 buckets may use week labels that are not identical to ISO Monday even when the
+ * activity week matches (e.g. bucket starts Sunday local vs recap Monday).
+ */
+export function findYearlyWeeklyBucketIndexForRecapMonday(
+  recapMondayYmd: string,
+  buckets: readonly YearlyWeeklyBucketParsed[],
+): number {
+  const monday = DateTime.fromISO(recapMondayYmd, { zone: "utc" }).startOf("day");
+  if (!monday.isValid) return -1;
+
+  for (let i = 0; i < buckets.length; i++) {
+    const start = DateTime.fromISO(buckets[i]!.weekStartYmd, { zone: "utc" }).startOf(
+      "day",
+    );
+    if (!start.isValid) continue;
+    const deltaDays = monday.diff(start, "days").days;
+    if (deltaDays >= 0 && deltaDays <= 6) return i;
+  }
+  return -1;
+}
+
+/**
+ * Find recap week's bucket; prev = prior bucket; 3-wk avg = mean of up to three buckets
+ * immediately before the recap week (indices i−3…i−1 when present).
  */
 export function computeWeeklyRollup(
   resolved: RecapWeekResolved,
   buckets: readonly YearlyWeeklyBucketParsed[],
 ): WeeklyRollup | undefined {
-  const target = resolved.localRange.start;
-  const idx = buckets.findIndex((b) => b.weekStartYmd === target);
+  const idx = findYearlyWeeklyBucketIndexForRecapMonday(
+    resolved.localRange.start,
+    buckets,
+  );
   if (idx < 0) return undefined;
 
   let prev: WeeklyRollup["prev"];
   if (idx > 0) {
     const p = buckets[idx - 1]!;
-    prev = {
-      distanceM: p.distanceM,
-      runs: p.runs,
-      durationS: p.durationS,
-      elevGainM: p.elevGainM,
-    };
+    const cand: NonNullable<WeeklyRollup["prev"]> = {};
+    if (p.distanceM !== undefined) cand.distanceM = p.distanceM;
+    if (p.runs !== undefined) cand.runs = p.runs;
+    if (p.durationS !== undefined) cand.durationS = p.durationS;
+    if (p.elevGainM !== undefined) cand.elevGainM = p.elevGainM;
+    if (Object.keys(cand).length > 0) prev = cand;
   }
 
   const start = Math.max(0, idx - 3);
@@ -236,16 +269,28 @@ export function computeWeeklyRollup(
     return prev ? { prev, threeWkAvg: undefined } : undefined;
   }
 
-  const n = slice.length;
   const durVals = slice
     .map((b) => b.durationS)
     .filter((x): x is number => x !== undefined && Number.isFinite(x) && x >= 0);
   const elevVals = slice
     .map((b) => b.elevGainM)
     .filter((x): x is number => x !== undefined && Number.isFinite(x) && x >= 0);
-  const threeWkAvg = {
-    distanceM: slice.reduce((s, b) => s + b.distanceM, 0) / n,
-    runs: slice.reduce((s, b) => s + b.runs, 0) / n,
+  const distVals = slice
+    .map((b) => b.distanceM)
+    .filter((x): x is number => x !== undefined && Number.isFinite(x) && x >= 0);
+  const runVals = slice
+    .map((b) => b.runs)
+    .filter((x): x is number => x !== undefined && Number.isFinite(x) && x >= 0);
+
+  const threeWkAvg: NonNullable<WeeklyRollup["threeWkAvg"]> = {
+    distanceM:
+      distVals.length > 0
+        ? distVals.reduce((s, x) => s + x, 0) / distVals.length
+        : undefined,
+    runs:
+      runVals.length > 0
+        ? runVals.reduce((s, x) => s + x, 0) / runVals.length
+        : undefined,
     durationS:
       durVals.length > 0
         ? durVals.reduce((s, x) => s + x, 0) / durVals.length
@@ -256,7 +301,16 @@ export function computeWeeklyRollup(
         : undefined,
   };
 
-  return { prev, threeWkAvg };
+  const hasThreeWkAvg =
+    threeWkAvg.distanceM !== undefined ||
+    threeWkAvg.runs !== undefined ||
+    threeWkAvg.durationS !== undefined ||
+    threeWkAvg.elevGainM !== undefined;
+
+  return {
+    prev,
+    threeWkAvg: hasThreeWkAvg ? threeWkAvg : undefined,
+  };
 }
 
 export function parseRelativeEffortSummary(body: string): RelativeEffortParsed | undefined {
@@ -438,8 +492,12 @@ export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSu
   const relativeEffort: RecapSummaryFromStats["relativeEffort"] = {};
 
   if (rollup?.prev) {
-    mileage.prevDistanceM = rollup.prev.distanceM;
-    runs.prev = rollup.prev.runs;
+    if (rollup.prev.distanceM !== undefined) {
+      mileage.prevDistanceM = rollup.prev.distanceM;
+    }
+    if (rollup.prev.runs !== undefined) {
+      runs.prev = rollup.prev.runs;
+    }
     if (rollup.prev.durationS !== undefined) {
       time.prevDurationS = rollup.prev.durationS;
     }
@@ -449,8 +507,12 @@ export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSu
   }
 
   if (rollup?.threeWkAvg) {
-    mileage.threeWkAvgDistanceM = rollup.threeWkAvg.distanceM;
-    runs.threeWkAvg = rollup.threeWkAvg.runs;
+    if (rollup.threeWkAvg.distanceM !== undefined) {
+      mileage.threeWkAvgDistanceM = rollup.threeWkAvg.distanceM;
+    }
+    if (rollup.threeWkAvg.runs !== undefined) {
+      runs.threeWkAvg = rollup.threeWkAvg.runs;
+    }
     if (rollup.threeWkAvg.durationS !== undefined) {
       time.threeWkAvgDurationS = rollup.threeWkAvg.durationS;
     }
