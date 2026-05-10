@@ -306,6 +306,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("heart-rate-zones");
     expect(out).toContain("unit-preference");
     expect(out).toContain("GET /workouts");
+    expect(out).toContain("/workouts/{id}/time-series");
     expect(out).toContain("GET /shoes");
   });
 });

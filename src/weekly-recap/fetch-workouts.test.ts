@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as shoesList from "../commands/shoes-list.js";
 import * as workoutGet from "../commands/workout-get.js";
+import * as workoutTimeSeries from "../commands/workout-time-series.js";
 import * as workoutsList from "../commands/workouts-list.js";
 import {
   dedupeWorkoutIds,
@@ -91,6 +92,11 @@ describe("fetchRecapWorkoutData", () => {
       status: 200,
       body: "{}",
     });
+    vi.spyOn(workoutTimeSeries, "probeWorkoutTimeSeries").mockResolvedValue({
+      kind: "ok",
+      status: 200,
+      body: JSON.stringify({ items: [] }),
+    });
     vi.spyOn(shoesList, "probeShoesList").mockResolvedValue({
       kind: "ok",
       status: 200,
@@ -110,6 +116,7 @@ describe("fetchRecapWorkoutData", () => {
     expect(r.workoutIds).toEqual([W1, W2]);
     expect(r.workoutDetails).toHaveLength(2);
     expect(workoutGet.probeWorkoutGet).toHaveBeenCalledTimes(2);
+    expect(workoutTimeSeries.probeWorkoutTimeSeries).toHaveBeenCalledTimes(2);
 
     const wl = vi.mocked(workoutsList.probeWorkoutsList).mock.calls[0]?.[2];
     expect(wl?.pageSize).toBe(RECAP_WORKOUT_LIST_PAGE_SIZE);
@@ -154,6 +161,7 @@ describe("fetchRecapWorkoutData", () => {
       body: "[]",
     });
     vi.spyOn(workoutGet, "probeWorkoutGet");
+    vi.spyOn(workoutTimeSeries, "probeWorkoutTimeSeries");
     vi.spyOn(shoesList, "probeShoesList").mockResolvedValue({
       kind: "ok",
       status: 200,
@@ -171,6 +179,7 @@ describe("fetchRecapWorkoutData", () => {
     if (!r.ok) return;
     expect(r.workoutIds).toHaveLength(0);
     expect(workoutGet.probeWorkoutGet).not.toHaveBeenCalled();
+    expect(workoutTimeSeries.probeWorkoutTimeSeries).not.toHaveBeenCalled();
     expect(shoesList.probeShoesList).toHaveBeenCalledTimes(1);
   });
 });

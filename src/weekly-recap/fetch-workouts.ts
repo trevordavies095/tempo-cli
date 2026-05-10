@@ -10,6 +10,14 @@ import {
   type WorkoutGetResult,
 } from "../commands/workout-get.js";
 import {
+  mergeWorkoutTimeSeriesSamplesByElapsedSecond,
+  parseWorkoutTimeSeriesPageBody,
+  probeWorkoutTimeSeries,
+  type WorkoutTimeSeriesSampleRow,
+  workoutTimeSeriesHttpErrorMessageForCli,
+} from "../commands/workout-time-series.js";
+import type { HrSamplePoint } from "./hr-analytics.js";
+import {
   probeWorkoutsList,
   workoutsListHttpErrorMessageForCli,
   type WorkoutsListQuery,
@@ -20,6 +28,10 @@ import { transportErrorMessage } from "../commands/health.js";
 export const RECAP_WORKOUT_LIST_PAGE_SIZE = 100;
 export const RECAP_WORKOUT_LIST_MAX_PAGES = 50;
 export const RECAP_WORKOUT_GET_CONCURRENCY = 4;
+/** Matches API default; max allowed by server is 5000. */
+export const RECAP_WORKOUT_TS_PAGE_SIZE = 1000;
+/** Safety cap on pagination (1000 × 500 = 500k samples max per workout). */
+export const RECAP_WORKOUT_TS_MAX_PAGES = 500;
 
 export type ParsedWorkoutsListBody = {
   items: Record<string, unknown>[];
@@ -113,6 +125,83 @@ export async function runPool<T, R>(
   return results;
 }
 
+function workoutTimeSeriesRowsToHrSamples(
+  rows: readonly WorkoutTimeSeriesSampleRow[],
+): HrSamplePoint[] {
+  return rows.map((r) => ({
+    elapsedSeconds: r.elapsedSeconds,
+    heartRateBpm: r.heartRateBpm,
+  }));
+}
+
+async function fetchWorkoutTimeSeriesAllPages(
+  baseUrl: string,
+  apiKey: string,
+  id: string,
+): Promise<
+  | { ok: true; samples: HrSamplePoint[] }
+  | {
+      ok: false;
+      kind: "http" | "transport" | "invalid";
+      message: string;
+      httpStatus?: number;
+      transportError?: unknown;
+    }
+> {
+  const merged: WorkoutTimeSeriesSampleRow[] = [];
+  let page = 1;
+  while (page <= RECAP_WORKOUT_TS_MAX_PAGES) {
+    const res = await probeWorkoutTimeSeries(baseUrl, apiKey, id, {
+      page,
+      pageSize: RECAP_WORKOUT_TS_PAGE_SIZE,
+    });
+    if (res.kind === "transport") {
+      return {
+        ok: false,
+        kind: "transport",
+        message: transportErrorMessage(res.error),
+        transportError: res.error,
+      };
+    }
+    if (res.kind === "http") {
+      if (res.status === 404) {
+        if (page === 1) {
+          return { ok: true, samples: [] };
+        }
+        break;
+      }
+      return {
+        ok: false,
+        kind: "http",
+        httpStatus: res.status,
+        message: `tempo weekly-recap: ${workoutTimeSeriesHttpErrorMessageForCli(
+          res.status,
+          res.body,
+          apiKey,
+          id,
+        )}`,
+      };
+    }
+    const parsed = parseWorkoutTimeSeriesPageBody(res.body);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        kind: "invalid",
+        message:
+          "tempo weekly-recap: could not parse GET /workouts/{id}/time-series response as JSON array or { items }",
+      };
+    }
+    merged.push(...parsed.items);
+    if (parsed.items.length < RECAP_WORKOUT_TS_PAGE_SIZE) break;
+    page += 1;
+  }
+  const deduped = mergeWorkoutTimeSeriesSamplesByElapsedSecond(merged);
+  return {
+    ok: true,
+    samples: workoutTimeSeriesRowsToHrSamples(deduped),
+  };
+}
+
 export type WorkoutDetailOk = {
   id: string;
   status: number;
@@ -124,6 +213,11 @@ export type FetchRecapWorkoutDataOk = {
   listItemCount: number;
   workoutIds: string[];
   workoutDetails: WorkoutDetailOk[];
+  /**
+   * Sparse HR samples from GET /workouts/{id}/time-series (all pages), used for HR analytics.
+   * Not included in CLI JSON output (can be large); passed only to {@link computeRecapHrAnalytics}.
+   */
+  timeSeriesByWorkoutId: Record<string, HrSamplePoint[]>;
   shoesStatus: number;
   shoesBody: string;
 };
@@ -257,6 +351,41 @@ export async function fetchRecapWorkoutData(
       workoutDetails.push({ id, status: r.status, body: r.body });
     }
   }
+
+  const timeSeriesByWorkoutId: Record<string, HrSamplePoint[]> = {};
+  if (workoutIds.length > 0) {
+    const tsPairs = await runPool(workoutIds, RECAP_WORKOUT_GET_CONCURRENCY, async (id) => {
+      const result = await fetchWorkoutTimeSeriesAllPages(baseUrl, apiKey, id);
+      return { id, result };
+    });
+    for (const { id, result } of tsPairs) {
+      if (!result.ok) {
+        if (result.kind === "transport") {
+          return {
+            ok: false,
+            kind: "transport",
+            message: result.message,
+            transportError: result.transportError,
+          };
+        }
+        if (result.kind === "http") {
+          return {
+            ok: false,
+            kind: "http",
+            httpStatus: result.httpStatus,
+            message: result.message,
+          };
+        }
+        return {
+          ok: false,
+          kind: "invalid",
+          message: result.message,
+        };
+      }
+      timeSeriesByWorkoutId[id] = result.samples;
+    }
+  }
+
   if (shoesRes.kind === "transport") {
     return {
       ok: false,
@@ -283,6 +412,7 @@ export async function fetchRecapWorkoutData(
     listItemCount: allItems.length,
     workoutIds,
     workoutDetails,
+    timeSeriesByWorkoutId,
     shoesStatus: shoesRes.status,
     shoesBody: shoesRes.body,
   };

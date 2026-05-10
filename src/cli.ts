@@ -153,6 +153,11 @@ import {
 } from "./commands/shoe-mileage.js";
 import { fetchRecapWorkoutData } from "./weekly-recap/fetch-workouts.js";
 import {
+  computeRecapHrAnalytics,
+  formatRecapHrAnalyticsHuman,
+  recapHrAnalyticsToJson,
+} from "./weekly-recap/hr-analytics.js";
+import {
   formatRecapZonesSummary,
   parseAndValidateHeartRateZones,
   parseRecapUnitPreference,
@@ -2132,7 +2137,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("weekly-recap")
   .description(
-    "Resolve the recap week (Mon–Sun), verify auth and settings, then fetch workouts (list + detail) and shoes for that window.",
+    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail) and shoes, then derive HR zone mix and drift from per-second HR when present.",
   )
   .option(
     "--week <spec>",
@@ -2156,7 +2161,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), and GET /shoes. Same API key resolution: --api-key, TEMPO_API_KEY, config. Full Markdown report generation will follow in later releases.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), and GET /shoes. Computes client-side HR analytics (zones, drift, % max HR) from time-series samples. Same API key resolution: --api-key, TEMPO_API_KEY, config. Full Markdown report generation will follow in later releases.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2346,6 +2351,16 @@ ${HELP_GLOBALS_HINT}
       /* ignore */
     }
 
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: zonesParsed.zones,
+      heartRateZonesBody: hrRes.body,
+      workoutDetails: fetchData.workoutDetails.map((d) => ({
+        id: d.id,
+        body: d.body,
+      })),
+      timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
+    });
+
     const humanLines = [
       `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
       `UTC startDate: ${v.utcStartDate}`,
@@ -2357,6 +2372,8 @@ ${HELP_GLOBALS_HINT}
       `Unique workout IDs: ${fetchData.workoutIds.length}`,
       `Detail bodies fetched: ${fetchData.workoutDetails.length}`,
       shoesHuman,
+      "",
+      formatRecapHrAnalyticsHuman(hrAnalytics),
     ].join("\n");
 
     const jsonBody: Record<string, unknown> = {
@@ -2386,6 +2403,7 @@ ${HELP_GLOBALS_HINT}
         status: fetchData.shoesStatus,
         body: fetchData.shoesBody,
       },
+      hrAnalytics: recapHrAnalyticsToJson(hrAnalytics),
     };
 
     const writePath = merged.write?.trim();
