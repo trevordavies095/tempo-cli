@@ -237,6 +237,37 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(md).toContain("River loop");
   });
 
+  it("places §2.8 Notable after §2.7 Trends when both provided", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 5000,
+      durationS: 1800,
+      avgPaceS: 400,
+      avgHeartRateBpm: 140,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const trendsSection = "## Trends\n\n- **Easy pace**: test\n";
+    const notableSection = "## Notable\n\n- No PRs\n";
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      trendsMarkdown: trendsSection,
+      notableMarkdown: notableSection,
+    });
+    expect(md.indexOf("## Trends")).toBeLessThan(md.indexOf("## Notable"));
+    expect(md).toContain("## Notable");
+  });
+
   it("places §2.7 trends after Run-by-run when workouts exist", () => {
     const workout = {
       startedAt: "2026-05-09T14:30:00.000Z",

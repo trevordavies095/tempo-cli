@@ -190,6 +190,18 @@ export function resolveRecapWeek(args: ResolveRecapWeekArgs): ResolveRecapWeekRe
  * §3.6 step 10 — UTC bounds for GET /workouts trend list: local recap Monday − 21d through
  * recap Sunday − 7d (three weeks before the recap week, inclusive).
  */
+/** ISO week id for the calendar week immediately before the recap week (same timezone). */
+export function priorIsoWeekId(
+  resolved: RecapWeekResolved,
+  timeZoneId: string,
+): string {
+  const monday = DateTime.fromISO(resolved.localRange.start, {
+    zone: timeZoneId,
+  }).startOf("day");
+  const priorMonday = monday.minus({ weeks: 1 });
+  return `${priorMonday.weekYear}-W${String(priorMonday.weekNumber).padStart(2, "0")}`;
+}
+
 export function resolveTrendWorkoutListUtcBounds(
   resolved: RecapWeekResolved,
   timeZoneId: string,

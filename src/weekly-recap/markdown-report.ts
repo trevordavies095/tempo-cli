@@ -34,6 +34,8 @@ export type WeeklyRecapMarkdownInput = {
   >;
   /** P9: optional §2.7 rolling trends (placed after Run-by-run). */
   trendsMarkdown?: string;
+  /** P10: optional §2.8 Notable (placed after Trends). */
+  notableMarkdown?: string;
 };
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
@@ -615,6 +617,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     summaryFromStats: sfs,
     similarRoutesByWorkoutId: similarMap,
     trendsMarkdown,
+    notableMarkdown,
   } = input;
 
   const shoeLookup = buildShoeLookup(shoesBody);
@@ -641,6 +644,10 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     sections.push("");
     if (trendsMarkdown?.trim()) {
       sections.push(trendsMarkdown.trim());
+      sections.push("");
+    }
+    if (notableMarkdown?.trim()) {
+      sections.push(notableMarkdown.trim());
       sections.push("");
     }
     return sections.join("\n").trimEnd() + "\n";
@@ -760,6 +767,11 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   if (trendsMarkdown?.trim()) {
     sections.push(trendsMarkdown.trim());
+    sections.push("");
+  }
+
+  if (notableMarkdown?.trim()) {
+    sections.push(notableMarkdown.trim());
     sections.push("");
   }
 

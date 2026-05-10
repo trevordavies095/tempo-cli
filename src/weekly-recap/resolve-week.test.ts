@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   getSystemTimeZone,
   isValidIanaTimeZone,
+  priorIsoWeekId,
   resolveRecapWeek,
   resolveTrendWorkoutListUtcBounds,
 } from "./resolve-week.js";
@@ -162,6 +163,19 @@ describe("resolveRecapWeek", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.message).toContain("week must be");
+  });
+});
+
+describe("priorIsoWeekId", () => {
+  it("returns the ISO week immediately before the recap week", () => {
+    const r = resolveRecapWeek({
+      weekSpec: "2026-W19",
+      timeZoneId: NY,
+      now: dtNy(2026, 1, 1),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(priorIsoWeekId(r.value, NY)).toBe("2026-W18");
   });
 });
 
