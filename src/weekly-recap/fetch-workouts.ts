@@ -23,11 +23,15 @@ import {
   type WorkoutsListQuery,
 } from "../commands/workouts-list.js";
 import { probeShoesList, shoesListHttpErrorMessageForCli } from "../commands/shoes-list.js";
+import { probeWorkoutSimilarRoutes } from "../commands/workout-similar-routes.js";
 import { transportErrorMessage } from "../commands/health.js";
+import type { RecapSimilarRoutesEntry } from "./similar-route-line.js";
 
 export const RECAP_WORKOUT_LIST_PAGE_SIZE = 100;
 export const RECAP_WORKOUT_LIST_MAX_PAGES = 50;
 export const RECAP_WORKOUT_GET_CONCURRENCY = 4;
+/** §3.5 — GET /workouts/{id}/similar-routes?maxResults=3 */
+export const RECAP_SIMILAR_ROUTES_MAX_RESULTS = 3;
 /** Matches API default; max allowed by server is 5000. */
 export const RECAP_WORKOUT_TS_PAGE_SIZE = 1000;
 /** Safety cap on pagination (1000 × 500 = 500k samples max per workout). */
@@ -220,6 +224,8 @@ export type FetchRecapWorkoutDataOk = {
   timeSeriesByWorkoutId: Record<string, HrSamplePoint[]>;
   shoesStatus: number;
   shoesBody: string;
+  /** Per workout; failures do not fail the overall fetch. */
+  similarRoutesByWorkoutId: Record<string, RecapSimilarRoutesEntry>;
 };
 
 export type FetchRecapWorkoutDataErr = {
@@ -238,6 +244,44 @@ export type FetchRecapWorkoutDataArgs = {
   startDate: string;
   endDate: string;
 };
+
+/** §3.10 — skip similar-routes HTTP when detail has no route/polyline-like fields. */
+export function workoutDetailHasLikelyRoute(body: string): boolean {
+  const t = body.trim();
+  if (!t) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(t) as unknown;
+  } catch {
+    return false;
+  }
+  if (!isPlainObject(parsed)) return false;
+  const w = parsed;
+  const routeLike = pickFirst(w, [
+    "route",
+    "Route",
+    "routeId",
+    "RouteId",
+    "routePolyline",
+    "RoutePolyline",
+  ]);
+  if (
+    routeLike !== undefined &&
+    routeLike !== null &&
+    routeLike !== ""
+  ) {
+    return true;
+  }
+  const poly = pickFirst(w, [
+    "polyline",
+    "Polyline",
+    "encodedPolyline",
+    "EncodedPolyline",
+  ]);
+  if (typeof poly === "string" && poly.trim().length > 0) return true;
+  if (isPlainObject(poly) && Object.keys(poly).length > 0) return true;
+  return false;
+}
 
 export async function fetchRecapWorkoutData(
   args: FetchRecapWorkoutDataArgs,
@@ -386,6 +430,40 @@ export async function fetchRecapWorkoutData(
     }
   }
 
+  const similarRoutesByWorkoutId: Record<string, RecapSimilarRoutesEntry> = {};
+  if (workoutIds.length > 0) {
+    const srPairs = await runPool(
+      workoutIds,
+      RECAP_WORKOUT_GET_CONCURRENCY,
+      async (id) => {
+        const detail = workoutDetails.find((d) => d.id === id);
+        const body = detail?.body ?? "";
+        if (!workoutDetailHasLikelyRoute(body)) {
+          return {
+            id,
+            entry: { ok: false as const, skipped: true },
+          };
+        }
+        const res = await probeWorkoutSimilarRoutes(baseUrl, apiKey, id, {
+          maxResults: RECAP_SIMILAR_ROUTES_MAX_RESULTS,
+        });
+        if (res.kind === "ok") {
+          return { id, entry: { ok: true as const, body: res.body } };
+        }
+        if (res.kind === "http") {
+          return {
+            id,
+            entry: { ok: false as const, httpStatus: res.status },
+          };
+        }
+        return { id, entry: { ok: false as const } };
+      },
+    );
+    for (const { id, entry } of srPairs) {
+      similarRoutesByWorkoutId[id] = entry;
+    }
+  }
+
   if (shoesRes.kind === "transport") {
     return {
       ok: false,
@@ -415,5 +493,6 @@ export async function fetchRecapWorkoutData(
     timeSeriesByWorkoutId,
     shoesStatus: shoesRes.status,
     shoesBody: shoesRes.body,
+    similarRoutesByWorkoutId,
   };
 }

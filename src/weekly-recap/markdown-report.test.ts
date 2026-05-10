@@ -4,6 +4,7 @@ import { computeRecapHrAnalytics } from "./hr-analytics.js";
 import { buildWeeklyRecapMarkdownCore } from "./markdown-report.js";
 import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
+import type { RecapSimilarRoutesEntry } from "./similar-route-line.js";
 
 const fiveZones = [
   { zone: 1, minBpm: 100, maxBpm: 120 },
@@ -194,5 +195,45 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(md).toContain("| Relative effort | 287 | 245 | 230 (190–270) | +57 |");
     expect(md).toContain("| Mileage |");
     expect(md).toContain("| +22.8 |");
+  });
+
+  it("renders Similar route narrative when similarRoutesByWorkoutId has OK body", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 8046.72,
+      durationS: 3480,
+      avgPaceS: 390,
+      avgHeartRateBpm: 161,
+    };
+    const similarPast = {
+      startedAt: "2026-04-11T14:30:00.000Z",
+      name: "River loop",
+      distanceM: 8000,
+      avgPaceS: 430,
+      avgHeartRateBpm: 168,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const entry: RecapSimilarRoutesEntry = {
+      ok: true,
+      body: JSON.stringify([similarPast]),
+    };
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "imperial",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      similarRoutesByWorkoutId: { [W1]: entry },
+    });
+    expect(md).toContain("Similar route:");
+    expect(md).not.toContain("Similar route: n/a");
+    expect(md).toContain("River loop");
   });
 });

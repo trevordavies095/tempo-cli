@@ -10,6 +10,10 @@ import type { RecapHrAnalyticsResult, RecapHrRunRow } from "./hr-analytics.js";
 import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapUnitPreference } from "./recap-settings.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
+import {
+  formatSimilarRouteMarkdownLine,
+  type RecapSimilarRoutesEntry,
+} from "./similar-route-line.js";
 
 const METERS_PER_MILE = 1609.344;
 const ZONE_BAR_WIDTH = 35;
@@ -24,6 +28,10 @@ export type WeeklyRecapMarkdownInput = {
   shoesBody: string;
   /** P7: optional; omit or failed stats → historical columns show — */
   summaryFromStats?: RecapSummaryFromStats;
+  /** P8: optional per-workout similar-routes fetch results */
+  similarRoutesByWorkoutId?: Readonly<
+    Record<string, RecapSimilarRoutesEntry | undefined>
+  >;
 };
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
@@ -433,8 +441,9 @@ function formatRunBlock(args: {
   unit: RecapUnitPreference;
   shoeLookup: Map<string, { label: string; mileageMi?: number }>;
   timeZoneId: string;
+  similarEntry?: RecapSimilarRoutesEntry;
 }): string {
-  const { workout, hr, unit, shoeLookup, timeZoneId } = args;
+  const { workout, hr, unit, shoeLookup, timeZoneId, similarEntry } = args;
 
   const startedRaw = pickFirst(workout, ["startedAt", "StartedAt"]);
   const startedAt =
@@ -547,7 +556,12 @@ function formatRunBlock(args: {
     lines.push("");
   }
 
-  lines.push(`Similar route: n/a`);
+  const similarLine = formatSimilarRouteMarkdownLine({
+    currentWorkout: workout,
+    entry: similarEntry,
+    unit,
+  });
+  lines.push(`Similar route: ${similarLine}`);
   lines.push("");
 
   const notes = pickFirst(workout, ["notes", "Notes"]);
@@ -597,6 +611,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     workoutDetails,
     shoesBody,
     summaryFromStats: sfs,
+    similarRoutesByWorkoutId: similarMap,
   } = input;
 
   const shoeLookup = buildShoeLookup(shoesBody);
@@ -727,6 +742,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
         unit,
         shoeLookup,
         timeZoneId,
+        similarEntry: similarMap?.[d.id],
       }),
     );
     blocks.push("");

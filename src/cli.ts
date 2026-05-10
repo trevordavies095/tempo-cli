@@ -2142,7 +2142,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("weekly-recap")
   .description(
-    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail), shoes, weekly stats (yearly-weekly + relative-effort), then derive HR zone mix and drift from per-second HR when present.",
+    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail + similar-routes when route data exists), shoes, weekly stats (yearly-weekly + relative-effort), then derive HR zone mix and drift from per-second HR when present.",
   )
   .option(
     "--week <spec>",
@@ -2174,7 +2174,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), and GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), and GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2416,6 +2416,7 @@ ${HELP_GLOBALS_HINT}
       workoutDetails: workoutDetailSlice,
       shoesBody: fetchData.shoesBody,
       summaryFromStats,
+      similarRoutesByWorkoutId: fetchData.similarRoutesByWorkoutId,
     });
 
     const diagnosticHumanLines = [
@@ -2458,6 +2459,7 @@ ${HELP_GLOBALS_HINT}
           id: d.id,
           status: d.status,
           body: d.body,
+          similarRoutes: fetchData.similarRoutesByWorkoutId[d.id],
         })),
       },
       shoes: {

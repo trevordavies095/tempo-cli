@@ -312,5 +312,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("GET /shoes");
     expect(out).toContain("/stats/yearly-weekly");
     expect(out).toContain("/stats/relative-effort");
+    expect(out).toContain("similar-routes");
+    expect(out).toContain("maxResults=3");
   });
 });
