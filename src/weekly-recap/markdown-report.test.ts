@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { computeRecapHrAnalytics } from "./hr-analytics.js";
 import { buildWeeklyRecapMarkdownCore } from "./markdown-report.js";
+import type { SubjectiveRunFields } from "./subjective-week.js";
 import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
 import type { RecapSimilarRoutesEntry } from "./similar-route-line.js";
@@ -313,6 +314,72 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(iQuality).toBeLessThan(iLong);
     expect(iLong).toBeLessThan(iTrends);
     expect(iTrends).toBeLessThan(iNotable);
+  });
+
+  it("adds subjective RPE/Felt/Pain line to run block when map matches local date", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 5000,
+      durationS: 1800,
+      avgPaceS: 400,
+      avgHeartRateBpm: 140,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const subMap = new Map<string, SubjectiveRunFields>();
+    subMap.set("2026-05-09", { rpe: 4, felt: 7, pain: "minor tweak" });
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      subjectiveByRunDate: subMap,
+    });
+    expect(md).toContain("RPE: 4/10");
+    expect(md).toContain("Felt: 7/10");
+    expect(md).toContain("Pain: minor tweak");
+  });
+
+  it("places §2.9 Subjective recap and §2.10 Questions after Notable", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 5000,
+      durationS: 1800,
+      avgPaceS: 400,
+      avgHeartRateBpm: 140,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const notableSection = "## Notable\n\n- x\n";
+    const subRecap = "## Subjective recap\n\nSleep avg this week: 7 hrs\n";
+    const coach = "## Questions for coach\n\n1. Test?\n";
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      notableMarkdown: notableSection,
+      subjectiveRecapMarkdown: subRecap,
+      coachPromptMarkdown: coach,
+    });
+    expect(md.indexOf("## Notable")).toBeLessThan(md.indexOf("## Subjective recap"));
+    expect(md.indexOf("## Subjective recap")).toBeLessThan(
+      md.indexOf("## Questions for coach"),
+    );
   });
 
   it("places §2.7 trends after Run-by-run when workouts exist", () => {

@@ -4,12 +4,14 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
+import { stringify as stringifyYaml } from "yaml";
 import { computePreFlagDefaults, loadConfigFile } from "./config/file.js";
 import { getDefaultTempoCacheDir } from "./config/cache-path.js";
 import {
   expandUserHomePath,
   getDefaultPrescribedFilePath,
 } from "./config/prescribed-path.js";
+import { getDefaultSubjectiveFilePath } from "./config/subjective-path.js";
 import { getDefaultConfigPath } from "./config/path.js";
 import {
   pickApiKey,
@@ -191,6 +193,16 @@ import {
 } from "./weekly-recap/notable.js";
 import { buildLongRunSectionOutput } from "./weekly-recap/long-run-section.js";
 import { buildPrescribedQualityOutput } from "./weekly-recap/quality-sessions.js";
+import { collectSubjectiveInteractive } from "./weekly-recap/subjective-interactive.js";
+import {
+  buildCoachPromptMarkdown,
+  buildSubjectiveRecapMarkdown,
+  filterRunsInRecapRange,
+  parseSubjectiveWeek,
+  subjectiveRunsToDateMap,
+  type SubjectiveRunFields,
+  type SubjectiveWeekDoc,
+} from "./weekly-recap/subjective-week.js";
 import {
   buildTrendsMarkdownSection,
   computeRecapTrendsSnapshot,
@@ -2201,6 +2213,14 @@ program
     "--prescribed-file <path>",
     "YAML prescribed week for §2.5 quality sessions (default: prescribed-{ISO week}.yaml beside config)",
   )
+  .option(
+    "--subjective-file <path>",
+    "YAML/JSON subjective inputs for §2.4 RPE/Felt/Pain and §2.9 weekly recap (default: subjective-{ISO week}.yaml beside config)",
+  )
+  .option(
+    "--no-subjective",
+    "Skip subjective file, prompts, and §2.9/§2.10 sections.",
+  )
   .addHelpText(
     "after",
     `
@@ -2229,6 +2249,8 @@ ${HELP_GLOBALS_HINT}
       format: "markdown" | "json";
       includeTrends: boolean;
       prescribedFile?: string;
+      subjectiveFile?: string;
+      subjective: boolean;
     };
 
     const tzRaw = merged.timezone?.trim();
@@ -2556,6 +2578,108 @@ ${HELP_GLOBALS_HINT}
       unitParsed.unit,
     );
 
+    let subjectiveRecapMd = "";
+    let coachPromptMd = "";
+    let subjectiveByRunDate = new Map<string, SubjectiveRunFields>();
+    let subjectivePayload: Record<string, unknown>;
+
+    if (merged.subjective === false) {
+      subjectivePayload = { skipped: true };
+    } else {
+      const subjectivePathResolved = expandUserHomePath(
+        merged.subjectiveFile?.trim() ||
+          getDefaultSubjectiveFilePath(v.isoWeekId),
+      );
+      let rawSub: string | undefined;
+      try {
+        rawSub = await readFile(subjectivePathResolved, "utf8");
+      } catch {
+        rawSub = undefined;
+      }
+
+      let subjectiveDoc: SubjectiveWeekDoc | undefined;
+      let loadedFromFile = false;
+      let parseError: string | undefined;
+      let interactiveSaved = false;
+
+      if (rawSub?.trim()) {
+        const parsed = parseSubjectiveWeek(rawSub, subjectivePathResolved);
+        if (parsed.ok) {
+          subjectiveDoc = parsed.value;
+          loadedFromFile = true;
+        } else {
+          parseError = parsed.message;
+          writeErrLine(`tempo weekly-recap: ${parsed.message}`);
+        }
+      }
+
+      if (subjectiveDoc === undefined && process.stdin.isTTY) {
+        subjectiveDoc = await collectSubjectiveInteractive({
+          isoWeekId: v.isoWeekId,
+          workoutDetails: workoutDetailSlice,
+          timeZoneId: tz,
+          unit: unitParsed.unit,
+          stdin: process.stdin,
+          stdout: process.stdout,
+        });
+        const savePath = getDefaultSubjectiveFilePath(v.isoWeekId);
+        try {
+          await mkdir(dirname(savePath), { recursive: true });
+          await atomicWriteFile(
+            savePath,
+            new TextEncoder().encode(stringifyYaml(subjectiveDoc)),
+          );
+          interactiveSaved = true;
+        } catch {
+          writeErrLine(
+            "tempo weekly-recap: could not save subjective file (non-fatal).",
+          );
+        }
+      } else if (
+        subjectiveDoc === undefined &&
+        !process.stdin.isTTY &&
+        !rawSub?.trim()
+      ) {
+        writeErrLine(
+          "tempo weekly-recap: no subjective file and stdin is not a TTY; subjective sections omitted.",
+        );
+      }
+
+      if (subjectiveDoc !== undefined) {
+        const runsInWeek = filterRunsInRecapRange(subjectiveDoc.runs, v);
+        subjectiveByRunDate = subjectiveRunsToDateMap(runsInWeek);
+        subjectiveRecapMd = buildSubjectiveRecapMarkdown(subjectiveDoc.weekly);
+        coachPromptMd = buildCoachPromptMarkdown(
+          subjectiveDoc.weekly?.questions_for_coach,
+        );
+        subjectivePayload = {
+          skipped: false,
+          path: subjectivePathResolved,
+          loadedFromFile,
+          parseError,
+          interactiveSaved,
+          savePath: interactiveSaved
+            ? getDefaultSubjectiveFilePath(v.isoWeekId)
+            : undefined,
+          week: subjectiveDoc.week,
+          runs: runsInWeek,
+          weekly: subjectiveDoc.weekly ?? null,
+          source: interactiveSaved
+            ? "interactive"
+            : loadedFromFile
+              ? "file"
+              : "unknown",
+        };
+      } else {
+        subjectivePayload = {
+          skipped: false,
+          reason: "no_subjective_data",
+          path: subjectivePathResolved,
+          parseError,
+        };
+      }
+    }
+
     const reportMarkdown = buildWeeklyRecapMarkdownCore({
       resolved: v,
       timeZoneId: tz,
@@ -2569,6 +2693,9 @@ ${HELP_GLOBALS_HINT}
       longRunMarkdown: longRunOut.markdown,
       trendsMarkdown,
       notableMarkdown,
+      subjectiveRecapMarkdown: subjectiveRecapMd,
+      coachPromptMarkdown: coachPromptMd,
+      subjectiveByRunDate,
     });
 
     const diagnosticHumanLines = [
@@ -2644,6 +2771,7 @@ ${HELP_GLOBALS_HINT}
       notable: recapNotableSnapshotToJson(notableSnapshot),
       prescribed: qualityOut.json,
       longRun: longRunOut.json,
+      subjective: subjectivePayload,
     };
 
     if (merged.format === "markdown") {

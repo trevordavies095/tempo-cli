@@ -14,6 +14,11 @@ import {
   formatSimilarRouteMarkdownLine,
   type RecapSimilarRoutesEntry,
 } from "./similar-route-line.js";
+import {
+  formatSubjectiveRunLine,
+  workoutLocalDate,
+  type SubjectiveRunFields,
+} from "./subjective-week.js";
 
 const METERS_PER_MILE = 1609.344;
 const ZONE_BAR_WIDTH = 35;
@@ -40,6 +45,12 @@ export type WeeklyRecapMarkdownInput = {
   trendsMarkdown?: string;
   /** P10: optional §2.8 Notable (placed after Trends). */
   notableMarkdown?: string;
+  /** P13: optional §2.9 subjective recap (after Notable). */
+  subjectiveRecapMarkdown?: string;
+  /** P13: optional §2.10 coach questions (after subjective recap). */
+  coachPromptMarkdown?: string;
+  /** P13: local-date → subjective fields for §2.4 run lines. */
+  subjectiveByRunDate?: ReadonlyMap<string, SubjectiveRunFields>;
 };
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
@@ -450,8 +461,10 @@ function formatRunBlock(args: {
   shoeLookup: Map<string, { label: string; mileageMi?: number }>;
   timeZoneId: string;
   similarEntry?: RecapSimilarRoutesEntry;
+  subjective?: SubjectiveRunFields;
 }): string {
-  const { workout, hr, unit, shoeLookup, timeZoneId, similarEntry } = args;
+  const { workout, hr, unit, shoeLookup, timeZoneId, similarEntry, subjective } =
+    args;
 
   const startedRaw = pickFirst(workout, ["startedAt", "StartedAt"]);
   const startedAt =
@@ -578,6 +591,12 @@ function formatRunBlock(args: {
     lines.push("");
   }
 
+  const subjectiveLine = subjective ? formatSubjectiveRunLine(subjective) : undefined;
+  if (subjectiveLine) {
+    lines.push(subjectiveLine);
+    lines.push("");
+  }
+
   return lines.join("\n").trimEnd();
 }
 
@@ -624,6 +643,9 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     longRunMarkdown,
     trendsMarkdown,
     notableMarkdown,
+    subjectiveRecapMarkdown,
+    coachPromptMarkdown,
+    subjectiveByRunDate,
   } = input;
 
   const shoeLookup = buildShoeLookup(shoesBody);
@@ -662,6 +684,14 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     }
     if (notableMarkdown?.trim()) {
       sections.push(notableMarkdown.trim());
+      sections.push("");
+    }
+    if (subjectiveRecapMarkdown?.trim()) {
+      sections.push(subjectiveRecapMarkdown.trim());
+      sections.push("");
+    }
+    if (coachPromptMarkdown?.trim()) {
+      sections.push(coachPromptMarkdown.trim());
       sections.push("");
     }
     return sections.join("\n").trimEnd() + "\n";
@@ -763,6 +793,15 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
       continue;
     }
     const hr = hrRowById(hrAnalytics, d.id);
+    const startedForDate = pickFirst(w, ["startedAt", "StartedAt"]);
+    const localDate =
+      typeof startedForDate === "string"
+        ? workoutLocalDate(startedForDate, timeZoneId)
+        : undefined;
+    const subjective =
+      localDate !== undefined
+        ? subjectiveByRunDate?.get(localDate)
+        : undefined;
     blocks.push(
       formatRunBlock({
         workout: w,
@@ -771,6 +810,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
         shoeLookup,
         timeZoneId,
         similarEntry: similarMap?.[d.id],
+        subjective,
       }),
     );
     blocks.push("");
@@ -796,6 +836,16 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   if (notableMarkdown?.trim()) {
     sections.push(notableMarkdown.trim());
+    sections.push("");
+  }
+
+  if (subjectiveRecapMarkdown?.trim()) {
+    sections.push(subjectiveRecapMarkdown.trim());
+    sections.push("");
+  }
+
+  if (coachPromptMarkdown?.trim()) {
+    sections.push(coachPromptMarkdown.trim());
     sections.push("");
   }
 
