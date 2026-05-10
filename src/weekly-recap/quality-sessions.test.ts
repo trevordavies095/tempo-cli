@@ -167,7 +167,7 @@ sessions:
     expect(json.weekMismatch).toBe(true);
   });
 
-  it("records long_run in JSON with deferred skip reason only", () => {
+  it("records long_run rows as prescribed metadata for §2.6", () => {
     const yaml = `
 week: 2026-W19
 sessions:
@@ -184,8 +184,14 @@ sessions:
       workoutDetails: [],
     });
     expect(markdown).toBe("");
-    const sessions = json.sessions as { skippedReason?: string }[];
-    expect(sessions[0]?.skippedReason).toBe("long_run_deferred_to_p12");
+    const sessions = json.sessions as {
+      kind?: string;
+      target_distance_mi?: number;
+      target_hr_bpm_max?: number;
+    }[];
+    expect(sessions[0]?.kind).toBe("long_run");
+    expect(sessions[0]?.target_distance_mi).toBe(14);
+    expect(sessions[0]?.target_hr_bpm_max).toBe(155);
   });
 
   it("returns parseError JSON and empty markdown on invalid YAML content", () => {

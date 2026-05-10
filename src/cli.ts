@@ -189,6 +189,7 @@ import {
   buildRecapNotableSnapshot,
   recapNotableSnapshotToJson,
 } from "./weekly-recap/notable.js";
+import { buildLongRunSectionOutput } from "./weekly-recap/long-run-section.js";
 import { buildPrescribedQualityOutput } from "./weekly-recap/quality-sessions.js";
 import {
   buildTrendsMarkdownSection,
@@ -2461,6 +2462,15 @@ ${HELP_GLOBALS_HINT}
       timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
     });
 
+    const longRunOut = buildLongRunSectionOutput({
+      prescribedRaw,
+      workoutDetails: workoutDetailSlice,
+      hrAnalytics,
+      timeZoneId: tz,
+      unit: unitParsed.unit,
+      resolvedIsoWeekId: v.isoWeekId,
+    });
+
     const yearlyWeeklyOk = ywRes.kind === "ok";
     const yearlyWeeklyBody = yearlyWeeklyOk ? ywRes.body : undefined;
     const relativeEffortOk = reRes.kind === "ok";
@@ -2556,6 +2566,7 @@ ${HELP_GLOBALS_HINT}
       summaryFromStats,
       similarRoutesByWorkoutId: fetchData.similarRoutesByWorkoutId,
       qualitySessionsMarkdown: qualityOut.markdown,
+      longRunMarkdown: longRunOut.markdown,
       trendsMarkdown,
       notableMarkdown,
     });
@@ -2632,6 +2643,7 @@ ${HELP_GLOBALS_HINT}
       trends: recapTrendsSnapshotToJson(trendsSnapshot),
       notable: recapNotableSnapshotToJson(notableSnapshot),
       prescribed: qualityOut.json,
+      longRun: longRunOut.json,
     };
 
     if (merged.format === "markdown") {

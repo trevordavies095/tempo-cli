@@ -34,6 +34,8 @@ export type WeeklyRecapMarkdownInput = {
   >;
   /** P11: optional §2.5 quality sessions (after Run-by-run, before Trends). */
   qualitySessionsMarkdown?: string;
+  /** P12: optional §2.6 long run (after Quality, before Trends). */
+  longRunMarkdown?: string;
   /** P9: optional §2.7 rolling trends (placed after Run-by-run). */
   trendsMarkdown?: string;
   /** P10: optional §2.8 Notable (placed after Trends). */
@@ -128,7 +130,7 @@ function buildShoeLookup(
   return map;
 }
 
-function formatDistanceDm(meters: number, unit: RecapUnitPreference): string {
+export function formatDistanceDm(meters: number, unit: RecapUnitPreference): string {
   if (!Number.isFinite(meters) || meters < 0) return "n/a";
   if (unit === "imperial") {
     const mi = meters / METERS_PER_MILE;
@@ -138,7 +140,7 @@ function formatDistanceDm(meters: number, unit: RecapUnitPreference): string {
   return `${km.toFixed(2)} km`;
 }
 
-function formatDuration(sec: number): string {
+export function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "n/a";
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -149,7 +151,7 @@ function formatDuration(sec: number): string {
 }
 
 /** `avgPaceS` from Tempo is seconds per kilometer. */
-function formatPaceFromSecondsPerKm(
+export function formatPaceFromSecondsPerKm(
   secPerKm: number,
   unit: RecapUnitPreference,
 ): string {
@@ -171,7 +173,7 @@ function formatElevationM(m: number | undefined, unit: RecapUnitPreference): str
   return `${Math.round(m)} m`;
 }
 
-function formatStartedTitle(
+export function formatStartedTitle(
   startedAt: string | undefined,
   timeZoneId: string,
 ): { titleDate: string; sortKey: number } {
@@ -187,7 +189,7 @@ function formatStartedTitle(
   return { titleDate, sortKey: local.toMillis() };
 }
 
-function formatSplitList(
+export function formatSplitList(
   splits: unknown,
   unit: RecapUnitPreference,
 ): string | undefined {
@@ -247,7 +249,7 @@ function formatElevGainLoss(workout: Record<string, unknown>, unit: RecapUnitPre
   return bits.join(" ");
 }
 
-function hrRowById(
+export function hrRowById(
   analytics: RecapHrAnalyticsResult,
   id: string,
 ): RecapHrRunRow | undefined {
@@ -619,6 +621,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     summaryFromStats: sfs,
     similarRoutesByWorkoutId: similarMap,
     qualitySessionsMarkdown,
+    longRunMarkdown,
     trendsMarkdown,
     notableMarkdown,
   } = input;
@@ -647,6 +650,10 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     sections.push("");
     if (qualitySessionsMarkdown?.trim()) {
       sections.push(qualitySessionsMarkdown.trim());
+      sections.push("");
+    }
+    if (longRunMarkdown?.trim()) {
+      sections.push(longRunMarkdown.trim());
       sections.push("");
     }
     if (trendsMarkdown?.trim()) {
@@ -774,6 +781,11 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   if (qualitySessionsMarkdown?.trim()) {
     sections.push(qualitySessionsMarkdown.trim());
+    sections.push("");
+  }
+
+  if (longRunMarkdown?.trim()) {
+    sections.push(longRunMarkdown.trim());
     sections.push("");
   }
 

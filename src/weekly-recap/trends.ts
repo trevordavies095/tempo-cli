@@ -88,7 +88,8 @@ function isEasyOrUntypedNonLong(runType: unknown): boolean {
   return t.includes("easy") || t.includes("recovery");
 }
 
-function isLongRunType(runType: unknown): boolean {
+/** Run type string contains “long” (e.g. Long Run) — §2.6 / trends long-run distance. */
+export function isLongRunType(runType: unknown): boolean {
   return typeof runType === "string" && runType.toLowerCase().includes("long");
 }
 

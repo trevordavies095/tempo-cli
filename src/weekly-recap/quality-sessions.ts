@@ -282,8 +282,9 @@ export function buildPrescribedQualityOutput(
       sessionResults.push({
         kind: "long_run",
         date: session.date,
-        skippedReason: "long_run_deferred_to_p12",
         description: session.description,
+        target_distance_mi: session.targetDistanceMi,
+        target_hr_bpm_max: session.targetHrBpmMax,
       });
       continue;
     }
