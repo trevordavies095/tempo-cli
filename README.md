@@ -15,6 +15,26 @@ Official-style command-line client for **[Tempo](https://github.com/trevordavies
 - A running Tempo server reachable from your machine.
 - Machine access via an **admin-issued API key** (`Authorization: Bearer`, key prefix `tmp_` in current Tempo designs). Key creation and rotation happen in Tempo, not in this CLI.
 
+This CLI targets the HTTP surface described by this repository’s vendored OpenAPI snapshot (see [API contract](#api-contract)). Commands that call **authenticated** routes send **`Authorization: Bearer`** using a key **created in [Tempo](https://github.com/trevordavies095/tempo/)**—installation, API-key issuance, and rotation are all upstream concerns. If your Tempo build does not yet support API-key auth for the routes you need, upgrade or align with a **recent upstream build** before assuming the CLI is wrong.
+
+**Security:** Treat API keys like passwords—never commit them to a repository, and avoid pasting them into public logs or CI output. If a key is exposed, **revoke or rotate it in Tempo** and issue a new one.
+
+## Install
+
+There is **no published npm package or Homebrew formula yet**—build from a checkout of this repository. When versioned releases or packaged installs exist, this section will include those commands.
+
+**Prerequisite:** Node.js **20** or newer (see `.nvmrc` for a suggested version).
+
+From the repository root:
+
+1. **`npm install`**
+2. **`npm run build`** — emits JavaScript to **`dist/`**
+3. Run the CLI with **`npx tempo`** or **`node dist/cli.js`** (for example **`npx tempo --help`**).
+
+Optional: run **`npm link`** from the repository root after a build to put **`tempo`** on your **`PATH`** via the [`bin`](package.json) entry (`tempo` → `./dist/cli.js`).
+
+For watch mode, tests, typechecking, and contributor-focused runtime behavior, see **[Development](#development)** below.
+
 ## Command naming
 
 - **`tempo workouts list`** — list or filter workouts (plural **`workouts`** for the collection).
@@ -124,9 +144,32 @@ Every leaf subcommand in these groups documents itself: run **`tempo stats <comm
 
 ## API contract
 
-A vendored OpenAPI snapshot lives at [`tempo_openapi_spec.json`](tempo_openapi_spec.json) for tests and client generation. When Tempo publishes a canonical spec from its mainline branches, this repo should track that for compatibility notes and codegen.
+The **vendored OpenAPI document** at the repository root—[`tempo_openapi_spec.json`](tempo_openapi_spec.json)—is a **snapshot** checked in for **contract tests**, **offline reference**, and **tooling** in this repo. Refresh it when upstream exports or publishes a canonical spec so tests and docs stay aligned.
+
+The **authoritative HTTP API** (and OpenAPI publishing, when offered by the project) evolves in **[Tempo](https://github.com/trevordavies095/tempo/)**. Use that repository for server behavior, authentication, and API changes; use `tempo_openapi_spec.json` here to see what this CLI’s tests and generators currently assume.
+
+## Compatibility
+
+Which **tempo-cli** releases pair with which **Tempo server** versions will be recorded here once both projects publish compatibility data. See [API contract](#api-contract) for the vendored HTTP surface this repo assumes.
+
+| tempo-cli | Minimum Tempo (server) | Notes |
+| --- | --- | --- |
+| TBD | TBD | Placeholder until releases are tagged. |
+
+Until tagged releases exist, use a **recent [Tempo](https://github.com/trevordavies095/tempo/)** build aligned with [`tempo_openapi_spec.json`](tempo_openapi_spec.json). Verify reachability with **`tempo health`** and inspect **`tempo server version`** when debugging mismatches.
+
+## Where to file issues
+
+- **This repository (tempo-cli):** packaging and install documentation; CLI commands, flags, **`--help`**, human vs JSON output, exit-code mapping, and **`config.toml` / environment handling on the client**; mistakes or gaps in this README or [AGENTS.md](AGENTS.md).
+- **[Tempo](https://github.com/trevordavies095/tempo/) (upstream server):** HTTP API behavior and compatibility; **Bearer API key** issuance, validation, and rotation **in the server**; OpenAPI export or publishing from Tempo; auth middleware and route behavior when the live server disagrees with the [vendored spec](tempo_openapi_spec.json).
+
+When a problem spans both sides—for example the server returns an unexpected JSON shape **and** this CLI mishandles a valid response—open or find issues **in both repositories** and **link the URLs** in each description so maintainers can coordinate.
+
+**Heuristic:** if the same failure reproduces with **`curl`** (or any HTTP client) against your Tempo base URL and token, the fix is usually **upstream**. If the API response is known-good and only **`tempo`** mis-parses or mis-renders it, file **here**.
 
 ## Development
+
+For the quickest path to a runnable CLI, see **[Install](#install)** above. The bullets below expand on contributor workflows.
 
 **Contributor reference:** [CLI runtime](docs/contributing/cli-runtime.md) — environment variables, config path and precedence, streams, exit codes, JSON errors, and a source map (for onboarding without spelunking).
 
@@ -214,7 +257,7 @@ Toolchain rationale (TypeScript on Node vs other options) is documented in [docs
 
 See [CLI runtime (contributor reference)](docs/contributing/cli-runtime.md) for env vars, config resolution, exit codes, JSON error shape, and links to implementing modules.
 
-Issues and pull requests for this repository should cover CLI behavior, packaging, and documentation. Changes to Tempo’s API, authentication, or OpenAPI publishing belong in the [Tempo](https://github.com/trevordavies095/tempo/) repository; link related work across repos when both sides change.
+For where to report bugs and feature requests (**tempo-cli** vs upstream **Tempo**), see **[Where to file issues](#where-to-file-issues)**.
 
 ## License
 
