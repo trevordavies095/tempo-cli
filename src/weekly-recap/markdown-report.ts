@@ -729,9 +729,23 @@ export function buildWeeklyRecapSummaryRows(args: {
       metric: "Avg easy-run HR",
       thisWeek:
         easyAvg !== undefined ? String(easyAvg) : EM_DASH,
-      prevWeek: EM_DASH,
-      threeWkAvg: EM_DASH,
-      delta: EM_DASH,
+      prevWeek: sfs?.easyRunHr
+        ? cellOrDash(
+            sfs.easyRunHr.prev !== undefined
+              ? String(Math.round(sfs.easyRunHr.prev))
+              : undefined,
+          )
+        : EM_DASH,
+      threeWkAvg: sfs?.easyRunHr
+        ? cellOrDash(
+            sfs.easyRunHr.threeWkAvg !== undefined
+              ? String(Math.round(sfs.easyRunHr.threeWkAvg))
+              : undefined,
+          )
+        : EM_DASH,
+      delta: sfs?.easyRunHr
+        ? cellOrDash(formatSignedIntDelta(sfs.easyRunHr.deltaVsThreeWk))
+        : EM_DASH,
     },
   ];
 }

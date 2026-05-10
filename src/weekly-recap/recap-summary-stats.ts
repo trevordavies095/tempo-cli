@@ -1,8 +1,8 @@
 /**
- * P7: derive §2.2 Prev week / 3-wk avg / Δ from GET /stats/yearly-weekly and
- * GET /stats/relative-effort. Δ vs 3-wk avg = This week − three-week average (spec §2.2).
+ * §2.2 Prev week / 3-wk avg / Δ: prefer GET /stats/weekly-recap when available; else
+ * GET /stats/yearly-weekly + GET /stats/relative-effort. Δ vs 3-wk avg = This week − trailingAvg.
  *
- * Avg easy-run HR history has no stats endpoint here — leave — in Markdown (trends/P9).
+ * When weekly-recap is used, GET /stats/relative-effort still merges threeWeekLow/High for the RE cell.
  */
 
 import { DateTime } from "luxon";
@@ -31,6 +31,7 @@ export type RelativeEffortParsed = {
 };
 
 export type RecapSummaryFromStats = {
+  weeklyRecapOk: boolean;
   yearlyWeeklyOk: boolean;
   relativeEffortOk: boolean;
   mileage: {
@@ -62,7 +63,158 @@ export type RecapSummaryFromStats = {
     /** workout RE sum − threeWeekAverage */
     deltaVsThreeWk?: number;
   };
+  /** Populated when GET /stats/weekly-recap supplies easy-run HR history. */
+  easyRunHr?: {
+    prev?: number;
+    threeWkAvg?: number;
+    deltaVsThreeWk?: number;
+  };
 };
+
+export type WeeklyRecapMetricBlockParsed = {
+  current?: number;
+  previous?: number;
+  trailingAvg?: number;
+};
+
+export type WeeklyRecapMetricsParsed = {
+  runs?: WeeklyRecapMetricBlockParsed;
+  distanceM?: WeeklyRecapMetricBlockParsed;
+  durationS?: WeeklyRecapMetricBlockParsed;
+  elevationGainM?: WeeklyRecapMetricBlockParsed;
+  relativeEffortSum?: WeeklyRecapMetricBlockParsed;
+  easyRunAvgHeartRateBpm?: WeeklyRecapMetricBlockParsed;
+};
+
+function toFiniteNumber(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function parseWeeklyRecapMetricBlock(
+  raw: unknown,
+): WeeklyRecapMetricBlockParsed | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  const current = toFiniteNumber(
+    pickFirst(raw, ["current", "Current", "CurrentWeek"]),
+  );
+  const previous = toFiniteNumber(
+    pickFirst(raw, ["previous", "Previous", "PreviousWeek"]),
+  );
+  const trailingAvg = toFiniteNumber(
+    pickFirst(raw, [
+      "trailingAvg",
+      "TrailingAvg",
+      "threeWeekAverage",
+      "ThreeWeekAverage",
+    ]),
+  );
+  const block: WeeklyRecapMetricBlockParsed = {};
+  if (current !== undefined) block.current = current;
+  if (previous !== undefined) block.previous = previous;
+  if (trailingAvg !== undefined) block.trailingAvg = trailingAvg;
+  if (Object.keys(block).length === 0) return undefined;
+  return block;
+}
+
+/**
+ * Locate the metrics bag on common API / serializer shapes (camelCase, PascalCase,
+ * or nested under data/result/value wrappers).
+ */
+function pickWeeklyRecapMetricsObject(
+  root: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const direct = pickFirst(root, ["metrics", "Metrics"]);
+  if (isPlainObject(direct)) return direct;
+
+  const wrappers = ["data", "Data", "result", "Result", "value", "Value"] as const;
+  for (const wk of wrappers) {
+    if (!Object.prototype.hasOwnProperty.call(root, wk)) continue;
+    const w = root[wk];
+    if (!isPlainObject(w)) continue;
+    const nested = pickFirst(w, ["metrics", "Metrics"]);
+    if (isPlainObject(nested)) return nested;
+    if (
+      Object.prototype.hasOwnProperty.call(w, "runs") ||
+      Object.prototype.hasOwnProperty.call(w, "Runs") ||
+      Object.prototype.hasOwnProperty.call(w, "distanceM") ||
+      Object.prototype.hasOwnProperty.call(w, "DistanceM") ||
+      Object.prototype.hasOwnProperty.call(w, "durationS") ||
+      Object.prototype.hasOwnProperty.call(w, "DurationS")
+    ) {
+      return w;
+    }
+  }
+  return undefined;
+}
+
+/** Extract `metrics` blocks from GET /stats/weekly-recap JSON; undefined if missing or invalid. */
+export function parseWeeklyRecapResponse(
+  body: string,
+): WeeklyRecapMetricsParsed | undefined {
+  const trimmed = body.trim();
+  if (!trimmed) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!isPlainObject(parsed)) return undefined;
+  const metricsRaw = pickWeeklyRecapMetricsObject(parsed);
+  if (!isPlainObject(metricsRaw)) return undefined;
+
+  const out: WeeklyRecapMetricsParsed = {};
+  const setIf = (
+    key: keyof WeeklyRecapMetricsParsed,
+    names: readonly string[],
+  ) => {
+    const inner = pickFirst(metricsRaw, names);
+    const b = parseWeeklyRecapMetricBlock(inner);
+    if (b !== undefined) out[key] = b;
+  };
+
+  setIf("runs", ["runs", "Runs", "runCount", "RunCount"]);
+  setIf("distanceM", ["distanceM", "DistanceM", "totalDistanceM", "TotalDistanceM"]);
+  setIf("durationS", [
+    "durationS",
+    "DurationS",
+    "durationSeconds",
+    "DurationSeconds",
+    "totalDurationS",
+    "TotalDurationS",
+  ]);
+  setIf("elevationGainM", [
+    "elevationGainM",
+    "ElevationGainM",
+    "elevGainM",
+    "ElevGainM",
+    "totalElevationGainM",
+    "TotalElevationGainM",
+  ]);
+  setIf("relativeEffortSum", [
+    "relativeEffortSum",
+    "RelativeEffortSum",
+    "relativeEffort",
+    "RelativeEffort",
+  ]);
+  setIf("easyRunAvgHeartRateBpm", [
+    "easyRunAvgHeartRateBpm",
+    "EasyRunAvgHeartRateBpm",
+    "easyRunHeartRateBpm",
+    "EasyRunHeartRateBpm",
+  ]);
+
+  if (Object.keys(out).length === 0) return undefined;
+  return out;
+}
 
 /** Normalize API date-like values to yyyy-MM-dd (Monday match for week buckets). */
 export function normalizeWeekStartYmd(raw: unknown): string | undefined {
@@ -446,6 +598,8 @@ export function refineRelativeEffortFromWeeks(
 
 export type BuildRecapSummaryArgs = {
   resolved: RecapWeekResolved;
+  /** When set, summary comparison columns come from GET /stats/weekly-recap. */
+  weeklyRecapParsed?: WeeklyRecapMetricsParsed;
   yearlyWeeklyBody?: string;
   yearlyWeeklyOk: boolean;
   relativeEffortBody?: string;
@@ -455,9 +609,136 @@ export type BuildRecapSummaryArgs = {
   workoutElevM: number;
   workoutReSum: number;
   runCount: number;
+  /** §2.2 easy cohort avg HR this week (hr-analytics); used for easy-run HR Δ with weekly-recap. */
+  easyAvgThisWeek?: number;
 };
 
-export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSummaryFromStats {
+function buildRecapSummaryFromWeeklyRecapApi(
+  args: BuildRecapSummaryArgs,
+): RecapSummaryFromStats {
+  const m = args.weeklyRecapParsed!;
+  const {
+    resolved,
+    relativeEffortBody,
+    relativeEffortOk,
+    workoutDistanceM,
+    workoutDurationS,
+    workoutElevM,
+    workoutReSum,
+    runCount,
+    easyAvgThisWeek,
+  } = args;
+
+  let reParsed: RelativeEffortParsed | undefined;
+  if (relativeEffortOk && relativeEffortBody !== undefined) {
+    reParsed = parseRelativeEffortSummary(relativeEffortBody);
+    if (reParsed) {
+      reParsed = refineRelativeEffortFromWeeks(
+        resolved,
+        relativeEffortBody,
+        reParsed,
+      );
+    }
+  }
+
+  const mileage: RecapSummaryFromStats["mileage"] = {};
+  const runs: RecapSummaryFromStats["runs"] = {};
+  const time: RecapSummaryFromStats["time"] = {};
+  const elevation: RecapSummaryFromStats["elevation"] = {};
+  const relativeEffort: RecapSummaryFromStats["relativeEffort"] = {};
+
+  const dist = m.distanceM;
+  if (dist?.previous !== undefined) mileage.prevDistanceM = dist.previous;
+  if (dist?.trailingAvg !== undefined) {
+    mileage.threeWkAvgDistanceM = dist.trailingAvg;
+  }
+  if (
+    mileage.threeWkAvgDistanceM !== undefined &&
+    Number.isFinite(workoutDistanceM)
+  ) {
+    mileage.deltaVsThreeWkM =
+      workoutDistanceM - mileage.threeWkAvgDistanceM;
+  }
+
+  const runB = m.runs;
+  if (runB?.previous !== undefined) runs.prev = runB.previous;
+  if (runB?.trailingAvg !== undefined) runs.threeWkAvg = runB.trailingAvg;
+  if (runs.threeWkAvg !== undefined) {
+    runs.deltaVsThreeWk = runCount - runs.threeWkAvg;
+  }
+
+  const dur = m.durationS;
+  if (dur?.previous !== undefined) time.prevDurationS = dur.previous;
+  if (dur?.trailingAvg !== undefined) {
+    time.threeWkAvgDurationS = dur.trailingAvg;
+  }
+  if (time.threeWkAvgDurationS !== undefined && workoutDurationS >= 0) {
+    time.deltaVsThreeWkS = workoutDurationS - time.threeWkAvgDurationS;
+  }
+
+  const el = m.elevationGainM;
+  if (el?.previous !== undefined) elevation.prevElevM = el.previous;
+  if (el?.trailingAvg !== undefined) {
+    elevation.threeWkAvgElevM = el.trailingAvg;
+  }
+  if (elevation.threeWkAvgElevM !== undefined && workoutElevM >= 0) {
+    elevation.deltaVsThreeWkM = workoutElevM - elevation.threeWkAvgElevM;
+  }
+
+  const reB = m.relativeEffortSum;
+  if (reB?.previous !== undefined) relativeEffort.prev = reB.previous;
+  if (reB?.trailingAvg !== undefined) {
+    relativeEffort.threeWkAvg = reB.trailingAvg;
+  }
+  if (reB?.trailingAvg !== undefined && workoutReSum >= 0) {
+    relativeEffort.deltaVsThreeWk = workoutReSum - reB.trailingAvg;
+  }
+  if (reParsed) {
+    if (reParsed.threeWeekLow !== undefined) {
+      relativeEffort.threeWkLow = reParsed.threeWeekLow;
+    }
+    if (reParsed.threeWeekHigh !== undefined) {
+      relativeEffort.threeWkHigh = reParsed.threeWeekHigh;
+    }
+  }
+
+  let easyRunHr: RecapSummaryFromStats["easyRunHr"] | undefined;
+  const ez = m.easyRunAvgHeartRateBpm;
+  if (ez) {
+    const hasHist =
+      ez.previous !== undefined || ez.trailingAvg !== undefined;
+    if (hasHist) {
+      easyRunHr = {};
+      if (ez.previous !== undefined) easyRunHr.prev = ez.previous;
+      if (ez.trailingAvg !== undefined) {
+        easyRunHr.threeWkAvg = ez.trailingAvg;
+      }
+      if (
+        easyAvgThisWeek !== undefined &&
+        ez.trailingAvg !== undefined
+      ) {
+        easyRunHr.deltaVsThreeWk = easyAvgThisWeek - ez.trailingAvg;
+      }
+      if (Object.keys(easyRunHr).length === 0) easyRunHr = undefined;
+    }
+  }
+
+  return {
+    weeklyRecapOk: true,
+    yearlyWeeklyOk: false,
+    relativeEffortOk,
+    mileage,
+    runs,
+    time,
+    elevation,
+    relativeEffort,
+    ...(easyRunHr ? { easyRunHr } : {}),
+  };
+}
+
+function buildRecapSummaryFromLegacyRollups(
+  args: BuildRecapSummaryArgs,
+): RecapSummaryFromStats {
   const {
     resolved,
     yearlyWeeklyBody,
@@ -481,7 +762,11 @@ export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSu
   if (relativeEffortOk && relativeEffortBody !== undefined) {
     reParsed = parseRelativeEffortSummary(relativeEffortBody);
     if (reParsed) {
-      reParsed = refineRelativeEffortFromWeeks(resolved, relativeEffortBody, reParsed);
+      reParsed = refineRelativeEffortFromWeeks(
+        resolved,
+        relativeEffortBody,
+        reParsed,
+      );
     }
   }
 
@@ -556,6 +841,7 @@ export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSu
   }
 
   return {
+    weeklyRecapOk: false,
     yearlyWeeklyOk,
     relativeEffortOk,
     mileage,
@@ -564,4 +850,13 @@ export function buildRecapSummaryFromStats(args: BuildRecapSummaryArgs): RecapSu
     elevation,
     relativeEffort,
   };
+}
+
+export function buildRecapSummaryFromStats(
+  args: BuildRecapSummaryArgs,
+): RecapSummaryFromStats {
+  if (args.weeklyRecapParsed !== undefined) {
+    return buildRecapSummaryFromWeeklyRecapApi(args);
+  }
+  return buildRecapSummaryFromLegacyRollups(args);
 }

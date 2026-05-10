@@ -160,6 +160,7 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     });
 
     const summaryFromStats: RecapSummaryFromStats = {
+      weeklyRecapOk: false,
       yearlyWeeklyOk: true,
       relativeEffortOk: true,
       mileage: {

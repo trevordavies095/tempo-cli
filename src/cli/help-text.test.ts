@@ -150,6 +150,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("yearly");
     expect(out).toContain("yearly-weekly");
     expect(out).toContain("relative-effort");
+    expect(out).toContain("weekly-recap");
     expect(out).toContain("best-efforts");
     expect(out).toContain("available-periods");
     expect(out).toContain("available-years");
@@ -165,6 +166,18 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("stats relative-effort");
     expect(out).toContain("GET /stats/relative-effort");
     expect(out).toContain("--timezone-offset-minutes");
+  });
+
+  it("stats weekly-recap --help documents path, flags, env, and globals", () => {
+    const out = helpFor(["stats", "weekly-recap", "--help"]);
+    expect(out).toContain("TEMPO_API_KEY");
+    expect(out).toContain("TEMPO_BASE_URL");
+    expect(out).toContain("Examples:");
+    expect(out).toContain("tempo --help");
+    expect(out).toContain("stats weekly-recap");
+    expect(out).toContain("GET /stats/weekly-recap");
+    expect(out).toContain("--timezone-offset-minutes");
+    expect(out).toContain("--reference-date");
   });
 
   it("stats best-efforts --help documents path, GET-only, env, and globals", () => {
@@ -311,7 +324,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("GET /workouts");
     expect(out).toContain("/workouts/{id}/time-series");
     expect(out).toContain("GET /shoes");
-    expect(out).toContain("/stats/yearly-weekly");
+    expect(out).toContain("/stats/weekly-recap");
     expect(out).toContain("/stats/relative-effort");
     expect(out).toContain("similar-routes");
     expect(out).toContain("maxResults=3");

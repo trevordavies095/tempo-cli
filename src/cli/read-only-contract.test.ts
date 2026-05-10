@@ -14,6 +14,7 @@ const READ_ONLY_GROUP_FILES: readonly string[] = [
   "src/commands/stats-yearly.ts",
   "src/commands/stats-yearly-weekly.ts",
   "src/commands/stats-relative-effort.ts",
+  "src/commands/stats-weekly-recap.ts",
   "src/commands/stats-best-efforts.ts",
   "src/commands/stats-available-periods.ts",
   "src/commands/stats-available-years.ts",

@@ -105,6 +105,13 @@ import {
   statsRelativeEffortQueryFromCli,
 } from "./commands/stats-relative-effort.js";
 import {
+  buildStatsWeeklyRecapPath,
+  probeStatsWeeklyRecap,
+  statsWeeklyRecapHumanSuccessLine,
+  statsWeeklyRecapHttpErrorMessageForCli,
+  statsWeeklyRecapQueryFromCli,
+} from "./commands/stats-weekly-recap.js";
+import {
   STATS_BEST_EFFORTS_PATH,
   probeStatsBestEfforts,
   statsBestEffortsHumanSuccessLine,
@@ -172,6 +179,7 @@ import {
 import { buildWeeklyRecapCompact } from "./weekly-recap/compact-report.js";
 import {
   aggregateSummaryStatsFromDetails,
+  avgEasyRunHr,
   buildWeeklyRecapMarkdownCore,
 } from "./weekly-recap/markdown-report.js";
 import { buildWeeklyRecapReportPayload } from "./weekly-recap/recap-json-report.js";
@@ -179,6 +187,7 @@ import {
   buildRecapSummaryFromStats,
   findYearlyWeeklyBucketIndexForRecapMonday,
   parseYearlyWeeklyBuckets,
+  parseWeeklyRecapResponse,
 } from "./weekly-recap/recap-summary-stats.js";
 import {
   formatRecapZonesSummary,
@@ -1475,6 +1484,104 @@ ${HELP_GLOBALS_HINT}
   });
 
 statsCmd
+  .command("weekly-recap")
+  .description(
+    "GET /stats/weekly-recap — current week aggregates vs previous week and 3-week trailing averages (Monday–Sunday via timezoneOffsetMinutes).",
+  )
+  .option(
+    "--timezone-offset-minutes <n>",
+    "Timezone offset in minutes (query: timezoneOffsetMinutes; negative for behind UTC)",
+  )
+  .option(
+    "--reference-date <yyyy-mm-dd>",
+    "Anchor calendar date for which week is current (query: referenceDate, YYYY-MM-DD)",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  TEMPO_BASE_URL=https://tempo.example.com TEMPO_API_KEY=tmp_... tempo stats weekly-recap
+  tempo stats weekly-recap --timezone-offset-minutes -300 --reference-date 2026-04-27
+  tempo --output json stats weekly-recap
+
+Week boundaries follow the fixed offset (not DST). Mid-week responses are week-to-date unless reference-date pins a past week.
+
+Requires an API key (--api-key, TEMPO_API_KEY, or api_key in config).
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+      timezoneOffsetMinutes?: string;
+      referenceDate?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    if (!key) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_MISSING_API_KEY,
+        message:
+          "tempo stats weekly-recap: provide --api-key, set TEMPO_API_KEY, or set api_key in config.toml.",
+      });
+      process.exit(EXIT_USAGE);
+    }
+    const parsed = statsWeeklyRecapQueryFromCli({
+      timezoneOffsetMinutes: merged.timezoneOffsetMinutes,
+      referenceDate: merged.referenceDate,
+    });
+    if ("error" in parsed) {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message: parsed.error,
+      });
+      process.exit(EXIT_USAGE);
+    }
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    const result = await probeStatsWeeklyRecap(
+      merged.baseUrl,
+      key,
+      parsed.ok,
+    );
+    if (result.kind === "ok") {
+      writeCommandSuccess(
+        merged.output,
+        statsWeeklyRecapHumanSuccessLine(result.status, result.body),
+        {
+          ok: true,
+          status: result.status,
+          path: buildStatsWeeklyRecapPath(parsed.ok),
+          body: result.body,
+        },
+      );
+      return;
+    }
+    if (result.kind === "http") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_HTTP,
+        message: statsWeeklyRecapHttpErrorMessageForCli(
+          result.status,
+          result.body,
+          key,
+          parsed.ok,
+        ),
+      });
+      process.exit(exitCodeForHttpStatus(result.status));
+    }
+    writeCommandError(merged.output, {
+      code: CLI_ERROR_TRANSPORT,
+      message: transportErrorMessage(result.error),
+    });
+    process.exit(exitCodeForFetchFailure(result.error));
+  });
+
+statsCmd
   .command("best-efforts")
   .description(
     "GET /stats/best-efforts — fastest time for each standard distance (read-only; never recalculates).",
@@ -1776,7 +1883,7 @@ ${HELP_GLOBALS_HINT}
 statsCmd.addHelpText(
   "after",
   `
-Subcommands: weekly, yearly, yearly-weekly, relative-effort, best-efforts, available-periods, available-years, insights. Run tempo stats <command> --help for each.
+Subcommands: weekly, yearly, yearly-weekly, relative-effort, weekly-recap, best-efforts, available-periods, available-years, insights. Run tempo stats <command> --help for each.
 
 All stats commands are read-only (GET) and require an API key (--api-key, TEMPO_API_KEY, or api_key in config).
 
@@ -2184,7 +2291,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("weekly-recap")
   .description(
-    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail + similar-routes when route data exists), shoes, weekly stats (yearly-weekly + relative-effort), then derive HR zone mix and drift from per-second HR when present.",
+    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail + similar-routes when route data exists), shoes, weekly stats (weekly-recap + relative-effort, with yearly-weekly fallback), then derive HR zone mix and drift from per-second HR when present.",
   )
   .option(
     "--week <spec>",
@@ -2247,7 +2354,7 @@ Examples:
   tempo weekly-recap --write ./recap.md
   tempo weekly-recap --no-include-trends
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the full Markdown weekly recap; --format compact prints a shorter terminal summary; --format json prints structured diagnostics only (no recap body). JSON CLI mode (--output json) always includes a structured "report" object (week, range, summary, zones, runs, trends, subjective) alongside existing keys; it includes reportMarkdown when --format markdown and compactText when --format compact. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/weekly-recap (referenceDate = recap Monday, timezoneOffsetMinutes) for §2.2 summary columns with GET /stats/yearly-weekly as fallback when that response is missing or invalid, GET /stats/relative-effort (timezoneOffsetMinutes) to enrich the relative-effort 3-week cell, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the full Markdown weekly recap; --format compact prints a shorter terminal summary; --format json prints structured diagnostics only (no recap body). JSON CLI mode (--output json) always includes a structured "report" object (week, range, summary, zones, runs, trends, subjective) alongside existing keys; it includes reportMarkdown when --format markdown and compactText when --format compact. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2437,7 +2544,7 @@ ${HELP_GLOBALS_HINT}
 
     const trendUtc = resolveTrendWorkoutListUtcBounds(v, tz);
 
-    const [fetchData, trendListRes, ywRes, reRes, beRes] = await Promise.all([
+    const [fetchData, trendListRes, wrRes, reRes, beRes] = await Promise.all([
       fetchRecapWorkoutData({
         baseUrl: merged.baseUrl,
         apiKey: key,
@@ -2455,9 +2562,9 @@ ${HELP_GLOBALS_HINT}
             ok: true as const,
             items: [] as Record<string, unknown>[],
           }),
-      probeStatsYearlyWeekly(merged.baseUrl, key, {
-        periodEndDate: v.localRange.end,
+      probeStatsWeeklyRecap(merged.baseUrl, key, {
         timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+        referenceDate: v.localRange.start,
       }),
       probeStatsRelativeEffort(merged.baseUrl, key, {
         timezoneOffsetMinutes: v.timezoneOffsetMinutes,
@@ -2494,6 +2601,22 @@ ${HELP_GLOBALS_HINT}
           fetchData.transportError ?? new Error(fetchData.message),
         ),
       );
+    }
+
+    const weeklyRecapParsed =
+      wrRes.kind === "ok" ? parseWeeklyRecapResponse(wrRes.body) : undefined;
+
+    let yearlyWeeklyBody: string | undefined;
+    let yearlyWeeklyOk = false;
+    if (weeklyRecapParsed === undefined) {
+      const yw = await probeStatsYearlyWeekly(merged.baseUrl, key, {
+        periodEndDate: v.localRange.end,
+        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      });
+      if (yw.kind === "ok") {
+        yearlyWeeklyOk = true;
+        yearlyWeeklyBody = yw.body;
+      }
     }
 
     if (merged.verbose) {
@@ -2564,27 +2687,47 @@ ${HELP_GLOBALS_HINT}
       resolvedIsoWeekId: v.isoWeekId,
     });
 
-    const yearlyWeeklyOk = ywRes.kind === "ok";
-    const yearlyWeeklyBody = yearlyWeeklyOk ? ywRes.body : undefined;
     const relativeEffortOk = reRes.kind === "ok";
     const relativeEffortBody = relativeEffortOk ? reRes.body : undefined;
 
     if (merged.verbose) {
-      const ywQuery = {
-        periodEndDate: v.localRange.end,
+      const wrPath = buildStatsWeeklyRecapPath({
         timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-      };
-      const ywPath = buildStatsYearlyWeeklyPath(ywQuery);
-      if (ywRes.kind === "ok") {
+        referenceDate: v.localRange.start,
+      });
+      if (wrRes.kind === "ok") {
         writeErrLine(
-          `tempo weekly-recap: GET ${ywPath} OK (HTTP ${ywRes.status})`,
+          `tempo weekly-recap: GET ${wrPath} OK (HTTP ${wrRes.status})`,
         );
-      } else if (ywRes.kind === "http") {
-        writeErrLine(`tempo weekly-recap: GET ${ywPath} HTTP ${ywRes.status}`);
+      } else if (wrRes.kind === "http") {
+        writeErrLine(`tempo weekly-recap: GET ${wrPath} HTTP ${wrRes.status}`);
       } else {
         writeErrLine(
-          `tempo weekly-recap: GET ${ywPath} transport: ${transportErrorMessage(ywRes.error)}`,
+          `tempo weekly-recap: GET ${wrPath} transport: ${transportErrorMessage(wrRes.error)}`,
         );
+      }
+
+      if (weeklyRecapParsed === undefined) {
+        const ywQuery = {
+          periodEndDate: v.localRange.end,
+          timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+        };
+        const ywPath = buildStatsYearlyWeeklyPath(ywQuery);
+        writeErrLine(
+          `tempo weekly-recap: GET ${ywPath} (fallback: weekly-recap unavailable or unparseable)`,
+        );
+        if (yearlyWeeklyOk && yearlyWeeklyBody !== undefined) {
+          const buckets = parseYearlyWeeklyBuckets(yearlyWeeklyBody);
+          const idx = findYearlyWeeklyBucketIndexForRecapMonday(
+            v.localRange.start,
+            buckets,
+          );
+          const first = buckets[0]?.weekStartYmd;
+          const last = buckets[buckets.length - 1]?.weekStartYmd;
+          writeErrLine(
+            `tempo weekly-recap: yearly-weekly rollup: buckets=${buckets.length} span ${first ?? "n/a"}…${last ?? "n/a"}; recapMonday=${v.localRange.start} matchedIndex=${idx}`,
+          );
+        }
       }
 
       const rePath = buildStatsRelativeEffortPath({
@@ -2601,24 +2744,12 @@ ${HELP_GLOBALS_HINT}
           `tempo weekly-recap: GET ${rePath} transport: ${transportErrorMessage(reRes.error)}`,
         );
       }
-
-      if (yearlyWeeklyOk && yearlyWeeklyBody !== undefined) {
-        const buckets = parseYearlyWeeklyBuckets(yearlyWeeklyBody);
-        const idx = findYearlyWeeklyBucketIndexForRecapMonday(
-          v.localRange.start,
-          buckets,
-        );
-        const first = buckets[0]?.weekStartYmd;
-        const last = buckets[buckets.length - 1]?.weekStartYmd;
-        writeErrLine(
-          `tempo weekly-recap: yearly-weekly rollup: buckets=${buckets.length} span ${first ?? "n/a"}…${last ?? "n/a"}; recapMonday=${v.localRange.start} matchedIndex=${idx}`,
-        );
-      }
     }
 
     const agg = aggregateSummaryStatsFromDetails(fetchData.workoutDetails);
     const summaryFromStats = buildRecapSummaryFromStats({
       resolved: v,
+      weeklyRecapParsed,
       yearlyWeeklyBody,
       yearlyWeeklyOk,
       relativeEffortBody,
@@ -2628,6 +2759,7 @@ ${HELP_GLOBALS_HINT}
       workoutElevM: agg.totalElevM,
       workoutReSum: agg.totalRe,
       runCount: fetchData.workoutDetails.length,
+      easyAvgThisWeek: avgEasyRunHr(hrAnalytics),
     });
 
     const cacheDir = resolveRecapCacheDir({
@@ -2911,12 +3043,13 @@ ${HELP_GLOBALS_HINT}
       },
       hrAnalytics: recapHrAnalyticsToJson(hrAnalytics),
       stats: {
-        yearlyWeekly: {
-          ok: yearlyWeeklyOk,
-          ...(ywRes.kind === "ok" || ywRes.kind === "http"
-            ? { httpStatus: ywRes.status }
+        weeklyRecap: {
+          ok: wrRes.kind === "ok",
+          parsed: weeklyRecapParsed !== undefined,
+          ...(wrRes.kind === "ok" || wrRes.kind === "http"
+            ? { httpStatus: wrRes.status }
             : {}),
-          ...(ywRes.kind === "transport"
+          ...(wrRes.kind === "transport"
             ? { transportError: true }
             : {}),
         },

@@ -45,6 +45,7 @@ describe("diffBestEfforts", () => {
 describe("evaluateRelativeEffortOverload", () => {
   it("flags when week RE >= 1.3x three-week average", () => {
     const summary = {
+      weeklyRecapOk: false,
       yearlyWeeklyOk: true,
       relativeEffortOk: true,
       mileage: {},
@@ -62,6 +63,7 @@ describe("evaluateRelativeEffortOverload", () => {
 
   it("does not flag below threshold", () => {
     const summary = {
+      weeklyRecapOk: false,
       yearlyWeeklyOk: true,
       relativeEffortOk: true,
       mileage: {},
