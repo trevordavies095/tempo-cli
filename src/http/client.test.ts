@@ -16,7 +16,10 @@ describe("createHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const client = createHttpClient({ baseUrl: "http://localhost:5001/" });
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001/",
+      transientNetworkRetry: false,
+    });
     await client.get("/version");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -36,6 +39,7 @@ describe("createHttpClient", () => {
     const client = createHttpClient({
       baseUrl: "http://localhost:5001",
       apiKey: "tmp_test_token",
+      transientNetworkRetry: false,
     });
     await client.get("/version");
 
@@ -48,7 +52,10 @@ describe("createHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const client = createHttpClient({ baseUrl: "http://localhost:5001" });
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      transientNetworkRetry: false,
+    });
     await client.get("/x");
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -62,6 +69,7 @@ describe("createHttpClient", () => {
     const client = createHttpClient({
       baseUrl: "http://localhost:5001",
       apiKey: "   \n\t  ",
+      transientNetworkRetry: false,
     });
     await client.get("/x");
 
@@ -73,7 +81,10 @@ describe("createHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const client = createHttpClient({ baseUrl: "http://localhost:5001" });
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      transientNetworkRetry: false,
+    });
     await client.get("/x", {
       headers: { Authorization: "Bearer from-init" },
     });
@@ -89,6 +100,7 @@ describe("createHttpClient", () => {
     const client = createHttpClient({
       baseUrl: "http://localhost:5001",
       apiKey: "from-factory",
+      transientNetworkRetry: false,
     });
     await client.get("/x", {
       headers: { Authorization: "Bearer from-init" },
@@ -104,7 +116,10 @@ describe("createHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const client = createHttpClient({ baseUrl: "https://tempo.example.com" });
+    const client = createHttpClient({
+      baseUrl: "https://tempo.example.com",
+      transientNetworkRetry: false,
+    });
     await client.get("workouts");
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -119,6 +134,7 @@ describe("createHttpClient", () => {
     const client = createHttpClient({
       baseUrl: "http://localhost:5001",
       timeoutMs: 60_000,
+      transientNetworkRetry: false,
     });
     await client.get("/x", { signal: user.signal });
 
@@ -131,7 +147,11 @@ describe("createHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const client = createHttpClient({ baseUrl: "http://a", timeoutMs: 5_000 });
+    const client = createHttpClient({
+      baseUrl: "http://a",
+      timeoutMs: 5_000,
+      transientNetworkRetry: false,
+    });
     await client.get("/");
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -139,7 +159,10 @@ describe("createHttpClient", () => {
   });
 
   it("rejects absolute path URLs", async () => {
-    const client = createHttpClient({ baseUrl: "http://localhost:5001" });
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      transientNetworkRetry: false,
+    });
     await expect(client.get("https://evil.test/x")).rejects.toThrow(
       /Absolute URLs are not supported/,
     );
@@ -147,5 +170,43 @@ describe("createHttpClient", () => {
 
   it("exports default timeout constant", () => {
     expect(DEFAULT_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it("does not retry when HTTP response is not ok (e.g. 503)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 503 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      transientNetworkRetry: true,
+    });
+    const res = await client.get("/version");
+    expect(res.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries transient fetch failures then succeeds", async () => {
+    vi.useFakeTimers();
+    const transientErr = new TypeError("fetch failed");
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(transientErr)
+      .mockRejectedValueOnce(transientErr)
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = createHttpClient({
+      baseUrl: "http://localhost:5001",
+      transientNetworkRetry: true,
+    });
+    const p = client.get("/version");
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+    const res = await p;
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
   });
 });

@@ -162,6 +162,7 @@ import {
 import {
   fetchRecapWorkoutData,
   fetchTrendWorkoutListItems,
+  formatTransportMessageWithAttempts,
 } from "./weekly-recap/fetch-workouts.js";
 import {
   computeRecapHrAnalytics,
@@ -2317,7 +2318,10 @@ ${HELP_GLOBALS_HINT}
     if (authResult.kind === "transport") {
       writeCommandError(merged.output, {
         code: CLI_ERROR_TRANSPORT,
-        message: transportErrorMessage(authResult.error),
+        message: formatTransportMessageWithAttempts(
+          `tempo weekly-recap: ${transportErrorMessage(authResult.error)}`,
+          [`GET ${AUTH_ME_PATH}`],
+        ),
       });
       process.exit(exitCodeForFetchFailure(authResult.error));
     }
@@ -2330,14 +2334,20 @@ ${HELP_GLOBALS_HINT}
     if (hrRes.kind === "transport") {
       writeCommandError(merged.output, {
         code: CLI_ERROR_TRANSPORT,
-        message: transportErrorMessage(hrRes.error),
+        message: formatTransportMessageWithAttempts(
+          `tempo weekly-recap: ${transportErrorMessage(hrRes.error)}`,
+          [`GET ${SETTINGS_HEART_RATE_ZONES_PATH}`],
+        ),
       });
       process.exit(exitCodeForFetchFailure(hrRes.error));
     }
     if (unitRes.kind === "transport") {
       writeCommandError(merged.output, {
         code: CLI_ERROR_TRANSPORT,
-        message: transportErrorMessage(unitRes.error),
+        message: formatTransportMessageWithAttempts(
+          `tempo weekly-recap: ${transportErrorMessage(unitRes.error)}`,
+          [`GET ${SETTINGS_UNIT_PREFERENCE_PATH}`],
+        ),
       });
       process.exit(exitCodeForFetchFailure(unitRes.error));
     }
@@ -2422,9 +2432,16 @@ ${HELP_GLOBALS_HINT}
           : fetchData.kind === "http"
             ? CLI_ERROR_HTTP
             : CLI_ERROR_TRANSPORT;
+      const errMsg =
+        fetchData.kind === "transport"
+          ? formatTransportMessageWithAttempts(
+              `tempo weekly-recap: ${fetchData.message}`,
+              fetchData.attemptedEndpoints,
+            )
+          : fetchData.message;
       writeCommandError(merged.output, {
         code,
-        message: fetchData.message,
+        message: errMsg,
       });
       if (fetchData.kind === "invalid") {
         process.exit(EXIT_USAGE);
@@ -2561,7 +2578,16 @@ ${HELP_GLOBALS_HINT}
       if (trendListRes.ok) {
         trendItems = trendListRes.items;
       } else {
-        trendsFetchReason = trendListRes.message;
+        trendsFetchReason =
+          trendListRes.kind === "transport" &&
+          trendListRes.attemptedEndpoints?.length
+            ? formatTransportMessageWithAttempts(
+                `tempo weekly-recap: ${trendListRes.message}`,
+                trendListRes.attemptedEndpoints,
+              )
+            : trendListRes.kind === "transport"
+              ? `tempo weekly-recap: ${trendListRes.message}`
+              : trendListRes.message;
       }
     }
 

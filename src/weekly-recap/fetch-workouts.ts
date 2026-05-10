@@ -3,6 +3,7 @@ import {
   pickFirst,
 } from "../output/human-summary.js";
 import {
+  buildWorkoutGetPath,
   probeWorkoutGet,
   workoutGetHttpErrorMessageForCli,
   isValidWorkoutId,
@@ -10,6 +11,7 @@ import {
   type WorkoutGetResult,
 } from "../commands/workout-get.js";
 import {
+  buildWorkoutTimeSeriesPath,
   mergeWorkoutTimeSeriesSamplesByElapsedSecond,
   parseWorkoutTimeSeriesPageBody,
   probeWorkoutTimeSeries,
@@ -18,11 +20,16 @@ import {
 } from "../commands/workout-time-series.js";
 import type { HrSamplePoint } from "./hr-analytics.js";
 import {
+  buildWorkoutsListPath,
   probeWorkoutsList,
   workoutsListHttpErrorMessageForCli,
   type WorkoutsListQuery,
 } from "../commands/workouts-list.js";
-import { probeShoesList, shoesListHttpErrorMessageForCli } from "../commands/shoes-list.js";
+import {
+  probeShoesList,
+  SHOES_LIST_PATH,
+  shoesListHttpErrorMessageForCli,
+} from "../commands/shoes-list.js";
 import { probeWorkoutSimilarRoutes } from "../commands/workout-similar-routes.js";
 import { transportErrorMessage } from "../commands/health.js";
 import type { RecapSimilarRoutesEntry } from "./similar-route-line.js";
@@ -36,6 +43,15 @@ export const RECAP_SIMILAR_ROUTES_MAX_RESULTS = 3;
 export const RECAP_WORKOUT_TS_PAGE_SIZE = 1000;
 /** Safety cap on pagination (1000 × 500 = 500k samples max per workout). */
 export const RECAP_WORKOUT_TS_MAX_PAGES = 500;
+
+/** §3.10 — append attempted endpoint labels after terminal transport failure. */
+export function formatTransportMessageWithAttempts(
+  baseMessage: string,
+  attemptedEndpoints?: readonly string[],
+): string {
+  if (!attemptedEndpoints?.length) return baseMessage;
+  return `${baseMessage}\nEndpoints attempted: ${attemptedEndpoints.join("; ")}`;
+}
 
 export type ParsedWorkoutsListBody = {
   items: Record<string, unknown>[];
@@ -142,6 +158,7 @@ async function fetchWorkoutTimeSeriesAllPages(
   baseUrl: string,
   apiKey: string,
   id: string,
+  recordAttempt?: (getLabel: string) => void,
 ): Promise<
   | { ok: true; samples: HrSamplePoint[] }
   | {
@@ -155,6 +172,11 @@ async function fetchWorkoutTimeSeriesAllPages(
   const merged: WorkoutTimeSeriesSampleRow[] = [];
   let page = 1;
   while (page <= RECAP_WORKOUT_TS_MAX_PAGES) {
+    const tsPath = buildWorkoutTimeSeriesPath(id, {
+      page,
+      pageSize: RECAP_WORKOUT_TS_PAGE_SIZE,
+    });
+    recordAttempt?.(`GET ${tsPath}`);
     const res = await probeWorkoutTimeSeries(baseUrl, apiKey, id, {
       page,
       pageSize: RECAP_WORKOUT_TS_PAGE_SIZE,
@@ -236,6 +258,8 @@ export type FetchRecapWorkoutDataErr = {
   httpStatus?: number;
   /** Original error when kind === "transport" (for exitCodeForFetchFailure). */
   transportError?: unknown;
+  /** GET paths recorded before terminal transport failure (§3.10). */
+  attemptedEndpoints?: string[];
 };
 
 export type FetchRecapWorkoutDataArgs = {
@@ -287,6 +311,7 @@ export async function fetchRecapWorkoutData(
   args: FetchRecapWorkoutDataArgs,
 ): Promise<FetchRecapWorkoutDataOk | FetchRecapWorkoutDataErr> {
   const { baseUrl, apiKey, startDate, endDate } = args;
+  const attemptedEndpoints: string[] = [];
 
   const listParamsBase: WorkoutsListQuery = {
     startDate,
@@ -308,6 +333,9 @@ export async function fetchRecapWorkoutData(
       };
     }
 
+    attemptedEndpoints.push(
+      `GET ${buildWorkoutsListPath({ ...listParamsBase, page })}`,
+    );
     const listRes = await probeWorkoutsList(baseUrl, apiKey, {
       ...listParamsBase,
       page,
@@ -319,6 +347,7 @@ export async function fetchRecapWorkoutData(
         kind: "transport",
         message: transportErrorMessage(listRes.error),
         transportError: listRes.error,
+        attemptedEndpoints: [...attemptedEndpoints],
       };
     }
     if (listRes.kind === "http") {
@@ -359,10 +388,14 @@ export async function fetchRecapWorkoutData(
     workoutIds.length === 0
       ? Promise.resolve([] as { id: string; r: WorkoutGetResult }[])
       : runPool(workoutIds, RECAP_WORKOUT_GET_CONCURRENCY, async (id) => {
+          attemptedEndpoints.push(`GET ${buildWorkoutGetPath(id)}`);
           const r = await probeWorkoutGet(baseUrl, apiKey, id);
           return { id, r };
         }),
-    probeShoesList(baseUrl, apiKey),
+    (async () => {
+      attemptedEndpoints.push(`GET ${SHOES_LIST_PATH}`);
+      return probeShoesList(baseUrl, apiKey);
+    })(),
   ]);
 
   for (const { id, r } of detailPairs) {
@@ -372,6 +405,7 @@ export async function fetchRecapWorkoutData(
         kind: "transport",
         message: transportErrorMessage(r.error),
         transportError: r.error,
+        attemptedEndpoints: [...attemptedEndpoints],
       };
     }
     if (r.kind === "http") {
@@ -399,7 +433,14 @@ export async function fetchRecapWorkoutData(
   const timeSeriesByWorkoutId: Record<string, HrSamplePoint[]> = {};
   if (workoutIds.length > 0) {
     const tsPairs = await runPool(workoutIds, RECAP_WORKOUT_GET_CONCURRENCY, async (id) => {
-      const result = await fetchWorkoutTimeSeriesAllPages(baseUrl, apiKey, id);
+      const result = await fetchWorkoutTimeSeriesAllPages(
+        baseUrl,
+        apiKey,
+        id,
+        (label) => {
+          attemptedEndpoints.push(label);
+        },
+      );
       return { id, result };
     });
     for (const { id, result } of tsPairs) {
@@ -410,6 +451,7 @@ export async function fetchRecapWorkoutData(
             kind: "transport",
             message: result.message,
             transportError: result.transportError,
+            attemptedEndpoints: [...attemptedEndpoints],
           };
         }
         if (result.kind === "http") {
@@ -470,6 +512,7 @@ export async function fetchRecapWorkoutData(
       kind: "transport",
       message: transportErrorMessage(shoesRes.error),
       transportError: shoesRes.error,
+      attemptedEndpoints: [...attemptedEndpoints],
     };
   }
   if (shoesRes.kind === "http") {
@@ -509,6 +552,7 @@ export type FetchTrendWorkoutListItemsErr = {
   message: string;
   httpStatus?: number;
   transportError?: unknown;
+  attemptedEndpoints?: string[];
 };
 
 export async function fetchTrendWorkoutListItems(args: {
@@ -518,6 +562,7 @@ export async function fetchTrendWorkoutListItems(args: {
   utcEndDate: string;
 }): Promise<FetchTrendWorkoutListItemsOk | FetchTrendWorkoutListItemsErr> {
   const { baseUrl, apiKey, utcStartDate, utcEndDate } = args;
+  const attemptedEndpoints: string[] = [];
 
   const listParamsBase: WorkoutsListQuery = {
     startDate: utcStartDate,
@@ -539,6 +584,9 @@ export async function fetchTrendWorkoutListItems(args: {
       };
     }
 
+    attemptedEndpoints.push(
+      `GET ${buildWorkoutsListPath({ ...listParamsBase, page })}`,
+    );
     const listRes = await probeWorkoutsList(baseUrl, apiKey, {
       ...listParamsBase,
       page,
@@ -550,6 +598,7 @@ export async function fetchTrendWorkoutListItems(args: {
         kind: "transport",
         message: transportErrorMessage(listRes.error),
         transportError: listRes.error,
+        attemptedEndpoints: [...attemptedEndpoints],
       };
     }
     if (listRes.kind === "http") {

@@ -1,4 +1,8 @@
 import { normalizeBaseUrl } from "../config/file.js";
+import {
+  DEFAULT_TRANSIENT_RETRY_DELAYS_MS,
+  runWithTransientNetworkRetry,
+} from "./transient-network-retry.js";
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -8,6 +12,11 @@ export type CreateHttpClientOptions = {
   timeoutMs?: number;
   /** When non-empty after trim, sets `Authorization: Bearer <key>` on every GET. */
   apiKey?: string;
+  /**
+   * Retry transient network failures (timeouts, connection errors) with §3.10 backoff.
+   * Defaults to true when running the CLI; false when `NODE_ENV=test` (e.g. Vitest).
+   */
+  transientNetworkRetry?: boolean;
 };
 
 export type HttpClient = {
@@ -42,6 +51,8 @@ export function createHttpClient(options: CreateHttpClientOptions): HttpClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const configuredApiKey = options.apiKey;
+  const transientNetworkRetry =
+    options.transientNetworkRetry ?? process.env.NODE_ENV !== "test";
 
   return {
     baseUrl,
@@ -54,12 +65,19 @@ export function createHttpClient(options: CreateHttpClientOptions): HttpClient {
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
       }
-      return fetch(url, {
-        ...rest,
-        method: "GET",
-        headers,
-        signal,
-        credentials: "omit",
+      const doFetch = () =>
+        fetch(url, {
+          ...rest,
+          method: "GET",
+          headers,
+          signal,
+          credentials: "omit",
+        });
+      if (!transientNetworkRetry) {
+        return doFetch();
+      }
+      return runWithTransientNetworkRetry(doFetch, {
+        delaysMs: DEFAULT_TRANSIENT_RETRY_DELAYS_MS,
       });
     },
   };
