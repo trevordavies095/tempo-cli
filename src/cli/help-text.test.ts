@@ -310,5 +310,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("GET /workouts");
     expect(out).toContain("/workouts/{id}/time-series");
     expect(out).toContain("GET /shoes");
+    expect(out).toContain("/stats/yearly-weekly");
+    expect(out).toContain("/stats/relative-effort");
   });
 });

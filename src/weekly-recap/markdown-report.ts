@@ -1,16 +1,19 @@
 /**
- * Weekly recap Markdown §2.1–§2.4 (P6). Prev week / 3-wk / Δ columns stay placeholders until P7 stats API.
+ * Weekly recap Markdown §2.1–§2.4: header, summary (P7 stats-backed columns when provided),
+ * zones, run blocks.
  */
 
 import { DateTime } from "luxon";
 
 import { isPlainObject, pickFirst } from "../output/human-summary.js";
 import type { RecapHrAnalyticsResult, RecapHrRunRow } from "./hr-analytics.js";
+import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapUnitPreference } from "./recap-settings.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
 
 const METERS_PER_MILE = 1609.344;
 const ZONE_BAR_WIDTH = 35;
+const EM_DASH = "—";
 
 export type WeeklyRecapMarkdownInput = {
   resolved: RecapWeekResolved;
@@ -19,6 +22,8 @@ export type WeeklyRecapMarkdownInput = {
   hrAnalytics: RecapHrAnalyticsResult;
   workoutDetails: readonly { id: string; body: string }[];
   shoesBody: string;
+  /** P7: optional; omit or failed stats → historical columns show — */
+  summaryFromStats?: RecapSummaryFromStats;
 };
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
@@ -235,7 +240,8 @@ function hrRowById(
   return analytics.runs.find((r) => r.id.toLowerCase() === id.toLowerCase());
 }
 
-function aggregateSummaryStats(
+/** Sums from workout detail JSON for §2.2 “This week” columns. */
+export function aggregateSummaryStats(
   workouts: readonly Record<string, unknown>[],
 ): {
   totalDistanceM: number;
@@ -265,6 +271,18 @@ function aggregateSummaryStats(
   };
 }
 
+/** Parse detail bodies for aggregateSummaryStats (CLI / tests). */
+export function aggregateSummaryStatsFromDetails(
+  workoutDetails: readonly { id: string; body: string }[],
+): ReturnType<typeof aggregateSummaryStats> {
+  const parsed: Record<string, unknown>[] = [];
+  for (const d of workoutDetails) {
+    const w = parseJsonObject(d.body);
+    if (w) parsed.push(w);
+  }
+  return aggregateSummaryStats(parsed);
+}
+
 /** Avg easy-run HR (§2.2): easy-typed runs only, not long/tempo/etc. */
 function isEasyRunTypeForSummary(runType: unknown): boolean {
   if (typeof runType !== "string") return false;
@@ -281,6 +299,81 @@ function avgEasyRunHr(analytics: RecapHrAnalyticsResult): number | undefined {
   }
   if (hrs.length === 0) return undefined;
   return Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length);
+}
+
+/** §2.2 Δ = This week − 3-wk avg (distance delta in m → display units). */
+function formatSignedDistanceDelta(
+  deltaM: number | undefined,
+  unit: RecapUnitPreference,
+): string | undefined {
+  if (deltaM === undefined || !Number.isFinite(deltaM)) return undefined;
+  const d =
+    unit === "imperial" ? deltaM / METERS_PER_MILE : deltaM / 1000;
+  const sign = d >= 0 ? "+" : "-";
+  return `${sign}${Math.abs(d).toFixed(1)}`;
+}
+
+function formatSignedRunsDelta(delta: number | undefined): string | undefined {
+  if (delta === undefined || !Number.isFinite(delta)) return undefined;
+  const sign = delta >= 0 ? "+" : "-";
+  return `${sign}${Math.abs(delta).toFixed(1)}`;
+}
+
+function formatRunsAvgOneDecimal(n: number | undefined): string | undefined {
+  if (n === undefined || !Number.isFinite(n)) return undefined;
+  return n.toFixed(1);
+}
+
+function formatSignedDurationDeltaSec(sec: number | undefined): string | undefined {
+  if (sec === undefined || !Number.isFinite(sec)) return undefined;
+  const sign = sec >= 0 ? "+" : "-";
+  const a = Math.abs(Math.round(sec));
+  const h = Math.floor(a / 3600);
+  const m = Math.floor((a % 3600) / 60);
+  const s = a % 60;
+  if (h > 0) return `${sign}${h}h ${m}m`;
+  if (m > 0) return `${sign}${m}m`;
+  return `${sign}${s}s`;
+}
+
+function formatSignedElevDeltaM(
+  deltaM: number | undefined,
+  unit: RecapUnitPreference,
+): string | undefined {
+  if (deltaM === undefined || !Number.isFinite(deltaM)) return undefined;
+  const sign = deltaM >= 0 ? "+" : "-";
+  const absVal = Math.abs(deltaM);
+  if (unit === "imperial") {
+    const ft = absVal * 3.28084;
+    return `${sign}${Math.round(ft)} ft`;
+  }
+  return `${sign}${Math.round(absVal)} m`;
+}
+
+function formatReThreeWkCell(
+  re: RecapSummaryFromStats["relativeEffort"],
+): string | undefined {
+  if (re.threeWkAvg === undefined) return undefined;
+  const mid = Math.round(re.threeWkAvg);
+  if (
+    re.threeWkLow !== undefined &&
+    re.threeWkHigh !== undefined &&
+    Number.isFinite(re.threeWkLow) &&
+    Number.isFinite(re.threeWkHigh)
+  ) {
+    return `${mid} (${Math.round(re.threeWkLow)}–${Math.round(re.threeWkHigh)})`;
+  }
+  return String(mid);
+}
+
+function formatSignedIntDelta(n: number | undefined): string | undefined {
+  if (n === undefined || !Number.isFinite(n)) return undefined;
+  const sign = n >= 0 ? "+" : "-";
+  return `${sign}${Math.round(Math.abs(n))}`;
+}
+
+function cellOrDash(v: string | undefined): string {
+  return v !== undefined && v !== "" ? v : EM_DASH;
 }
 
 function formatZoneDuration(seconds: number): string {
@@ -503,6 +596,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     hrAnalytics,
     workoutDetails,
     shoesBody,
+    summaryFromStats: sfs,
   } = input;
 
   const shoeLookup = buildShoeLookup(shoesBody);
@@ -540,27 +634,72 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
   const runCount = workoutDetails.length;
   const easyAvg = avgEasyRunHr(hrAnalytics);
 
+  const mileagePrev =
+    sfs?.mileage.prevDistanceM !== undefined
+      ? formatDistanceDm(sfs.mileage.prevDistanceM, unit)
+      : undefined;
+  const mileage3 =
+    sfs?.mileage.threeWkAvgDistanceM !== undefined
+      ? formatDistanceDm(sfs.mileage.threeWkAvgDistanceM, unit)
+      : undefined;
+  const mileageDelta = formatSignedDistanceDelta(sfs?.mileage.deltaVsThreeWkM, unit);
+
+  const runsPrev =
+    sfs?.runs.prev !== undefined ? String(Math.round(sfs.runs.prev)) : undefined;
+  const runs3 = formatRunsAvgOneDecimal(sfs?.runs.threeWkAvg);
+  const runsDelta = formatSignedRunsDelta(sfs?.runs.deltaVsThreeWk);
+
+  const timePrev =
+    sfs?.time.prevDurationS !== undefined
+      ? formatDuration(Math.round(sfs.time.prevDurationS))
+      : undefined;
+  const time3 =
+    sfs?.time.threeWkAvgDurationS !== undefined
+      ? formatDuration(Math.round(sfs.time.threeWkAvgDurationS))
+      : undefined;
+  const timeDelta = formatSignedDurationDeltaSec(sfs?.time.deltaVsThreeWkS);
+
+  const elevPrev =
+    sfs?.elevation.prevElevM !== undefined
+      ? formatElevationM(sfs.elevation.prevElevM, unit)
+      : undefined;
+  const elev3 =
+    sfs?.elevation.threeWkAvgElevM !== undefined
+      ? formatElevationM(sfs.elevation.threeWkAvgElevM, unit)
+      : undefined;
+  const elevDelta = formatSignedElevDeltaM(sfs?.elevation.deltaVsThreeWkM, unit);
+
+  const reThisWeek =
+    agg.totalRe > 0 ? String(Math.round(agg.totalRe)) : EM_DASH;
+  const rePrev =
+    sfs?.relativeEffort.prev !== undefined
+      ? String(Math.round(sfs.relativeEffort.prev))
+      : undefined;
+  const re3 = sfs ? formatReThreeWkCell(sfs.relativeEffort) : undefined;
+  const reDelta = formatSignedIntDelta(sfs?.relativeEffort.deltaVsThreeWk);
+
   sections.push("## Summary");
   sections.push("");
   sections.push("| Metric | This week | Prev week | 3-wk avg | Δ |");
   sections.push("| --- | --- | --- | --- | --- |");
-  /** P7 will fill historical columns; keep table shape per §2.2. */
-  const dash = "—";
   sections.push(
-    `| Mileage | ${formatDistanceDm(agg.totalDistanceM, unit)} | ${dash} | ${dash} | ${dash} |`,
-  );
-  sections.push(`| Runs | ${runCount} | ${dash} | ${dash} | ${dash} |`);
-  sections.push(
-    `| Total time | ${formatDuration(agg.totalDurationS)} | ${dash} | ${dash} | ${dash} |`,
+    `| Mileage | ${formatDistanceDm(agg.totalDistanceM, unit)} | ${cellOrDash(mileagePrev)} | ${cellOrDash(mileage3)} | ${cellOrDash(mileageDelta)} |`,
   );
   sections.push(
-    `| Total elevation | ${formatElevationM(agg.totalElevM, unit)} | ${dash} | ${dash} | ${dash} |`,
+    `| Runs | ${runCount} | ${cellOrDash(runsPrev)} | ${cellOrDash(runs3)} | ${cellOrDash(runsDelta)} |`,
   );
   sections.push(
-    `| Relative effort | ${agg.totalRe > 0 ? String(Math.round(agg.totalRe)) : "—"} | ${dash} | ${dash} | ${dash} |`,
+    `| Total time | ${formatDuration(agg.totalDurationS)} | ${cellOrDash(timePrev)} | ${cellOrDash(time3)} | ${cellOrDash(timeDelta)} |`,
   );
   sections.push(
-    `| Avg easy-run HR | ${easyAvg !== undefined ? String(easyAvg) : "—"} | ${dash} | ${dash} | ${dash} |`,
+    `| Total elevation | ${formatElevationM(agg.totalElevM, unit)} | ${cellOrDash(elevPrev)} | ${cellOrDash(elev3)} | ${cellOrDash(elevDelta)} |`,
+  );
+  sections.push(
+    `| Relative effort | ${reThisWeek} | ${cellOrDash(rePrev)} | ${cellOrDash(re3)} | ${cellOrDash(reDelta)} |`,
+  );
+  /** Prev / 3-wk need per-run HR history; no stats endpoint in P7 (see recap-summary-stats). */
+  sections.push(
+    `| Avg easy-run HR | ${easyAvg !== undefined ? String(easyAvg) : EM_DASH} | ${EM_DASH} | ${EM_DASH} | ${EM_DASH} |`,
   );
   sections.push("");
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { computeRecapHrAnalytics } from "./hr-analytics.js";
 import { buildWeeklyRecapMarkdownCore } from "./markdown-report.js";
+import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
 
 const fiveZones = [
@@ -138,5 +139,60 @@ describe("buildWeeklyRecapMarkdownCore", () => {
       shoesBody: "[]",
     });
     expect(md).toContain("Splits: n/a");
+  });
+
+  it("fills §2.2 stats columns when summaryFromStats is provided (Δ vs 3-wk avg)", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 45600,
+      durationS: 3600,
+      avgPaceS: 400,
+      relativeEffort: 287,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+
+    const summaryFromStats: RecapSummaryFromStats = {
+      yearlyWeeklyOk: true,
+      relativeEffortOk: true,
+      mileage: {
+        prevDistanceM: 24000,
+        threeWkAvgDistanceM: 22800,
+        deltaVsThreeWkM: 45600 - 22800,
+      },
+      runs: {
+        prev: 4,
+        threeWkAvg: 4.3,
+        deltaVsThreeWk: 1 - 4.3,
+      },
+      time: {},
+      elevation: {},
+      relativeEffort: {
+        prev: 245,
+        threeWkAvg: 230,
+        threeWkLow: 190,
+        threeWkHigh: 270,
+        deltaVsThreeWk: 287 - 230,
+      },
+    };
+
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      summaryFromStats,
+    });
+
+    expect(md).toContain("| Relative effort | 287 | 245 | 230 (190–270) | +57 |");
+    expect(md).toContain("| Mileage |");
+    expect(md).toContain("| +22.8 |");
   });
 });

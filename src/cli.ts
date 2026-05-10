@@ -157,7 +157,11 @@ import {
   formatRecapHrAnalyticsHuman,
   recapHrAnalyticsToJson,
 } from "./weekly-recap/hr-analytics.js";
-import { buildWeeklyRecapMarkdownCore } from "./weekly-recap/markdown-report.js";
+import {
+  aggregateSummaryStatsFromDetails,
+  buildWeeklyRecapMarkdownCore,
+} from "./weekly-recap/markdown-report.js";
+import { buildRecapSummaryFromStats } from "./weekly-recap/recap-summary-stats.js";
 import {
   formatRecapZonesSummary,
   parseAndValidateHeartRateZones,
@@ -2138,7 +2142,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("weekly-recap")
   .description(
-    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail) and shoes, then derive HR zone mix and drift from per-second HR when present.",
+    "Resolve the recap week (Mon–Sun), verify auth and settings, fetch workouts (list + detail), shoes, weekly stats (yearly-weekly + relative-effort), then derive HR zone mix and drift from per-second HR when present.",
   )
   .option(
     "--week <spec>",
@@ -2170,7 +2174,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), and GET /shoes. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), and GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2318,12 +2322,21 @@ ${HELP_GLOBALS_HINT}
 
     const v = resolved.value;
 
-    const fetchData = await fetchRecapWorkoutData({
-      baseUrl: merged.baseUrl,
-      apiKey: key,
-      startDate: v.utcStartDate,
-      endDate: v.utcEndDate,
-    });
+    const [fetchData, ywRes, reRes] = await Promise.all([
+      fetchRecapWorkoutData({
+        baseUrl: merged.baseUrl,
+        apiKey: key,
+        startDate: v.utcStartDate,
+        endDate: v.utcEndDate,
+      }),
+      probeStatsYearlyWeekly(merged.baseUrl, key, {
+        periodEndDate: v.localRange.end,
+        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      }),
+      probeStatsRelativeEffort(merged.baseUrl, key, {
+        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      }),
+    ]);
 
     if (!fetchData.ok) {
       const code =
@@ -2376,6 +2389,25 @@ ${HELP_GLOBALS_HINT}
       body: d.body,
     }));
 
+    const yearlyWeeklyOk = ywRes.kind === "ok";
+    const yearlyWeeklyBody = yearlyWeeklyOk ? ywRes.body : undefined;
+    const relativeEffortOk = reRes.kind === "ok";
+    const relativeEffortBody = relativeEffortOk ? reRes.body : undefined;
+
+    const agg = aggregateSummaryStatsFromDetails(fetchData.workoutDetails);
+    const summaryFromStats = buildRecapSummaryFromStats({
+      resolved: v,
+      yearlyWeeklyBody,
+      yearlyWeeklyOk,
+      relativeEffortBody,
+      relativeEffortOk,
+      workoutDistanceM: agg.totalDistanceM,
+      workoutDurationS: agg.totalDurationS,
+      workoutElevM: agg.totalElevM,
+      workoutReSum: agg.totalRe,
+      runCount: fetchData.workoutDetails.length,
+    });
+
     const reportMarkdown = buildWeeklyRecapMarkdownCore({
       resolved: v,
       timeZoneId: tz,
@@ -2383,6 +2415,7 @@ ${HELP_GLOBALS_HINT}
       hrAnalytics,
       workoutDetails: workoutDetailSlice,
       shoesBody: fetchData.shoesBody,
+      summaryFromStats,
     });
 
     const diagnosticHumanLines = [
@@ -2432,6 +2465,27 @@ ${HELP_GLOBALS_HINT}
         body: fetchData.shoesBody,
       },
       hrAnalytics: recapHrAnalyticsToJson(hrAnalytics),
+      stats: {
+        yearlyWeekly: {
+          ok: yearlyWeeklyOk,
+          ...(ywRes.kind === "ok" || ywRes.kind === "http"
+            ? { httpStatus: ywRes.status }
+            : {}),
+          ...(ywRes.kind === "transport"
+            ? { transportError: true }
+            : {}),
+        },
+        relativeEffort: {
+          ok: relativeEffortOk,
+          ...(reRes.kind === "ok" || reRes.kind === "http"
+            ? { httpStatus: reRes.status }
+            : {}),
+          ...(reRes.kind === "transport"
+            ? { transportError: true }
+            : {}),
+        },
+        recapSummary: summaryFromStats,
+      },
     };
 
     if (merged.format === "markdown") {
