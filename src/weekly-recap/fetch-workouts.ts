@@ -496,3 +496,97 @@ export async function fetchRecapWorkoutData(
     similarRoutesByWorkoutId,
   };
 }
+
+/** §3.6 step 10 — trend window list only (paginated GET /workouts). */
+export type FetchTrendWorkoutListItemsOk = {
+  ok: true;
+  items: Record<string, unknown>[];
+};
+
+export type FetchTrendWorkoutListItemsErr = {
+  ok: false;
+  kind: "http" | "transport" | "invalid";
+  message: string;
+  httpStatus?: number;
+  transportError?: unknown;
+};
+
+export async function fetchTrendWorkoutListItems(args: {
+  baseUrl: string;
+  apiKey: string;
+  utcStartDate: string;
+  utcEndDate: string;
+}): Promise<FetchTrendWorkoutListItemsOk | FetchTrendWorkoutListItemsErr> {
+  const { baseUrl, apiKey, utcStartDate, utcEndDate } = args;
+
+  const listParamsBase: WorkoutsListQuery = {
+    startDate: utcStartDate,
+    endDate: utcEndDate,
+    pageSize: RECAP_WORKOUT_LIST_PAGE_SIZE,
+    sortBy: "startedAt",
+    sortOrder: "asc",
+  };
+
+  const allItems: Record<string, unknown>[] = [];
+  let page = 1;
+
+  while (true) {
+    if (page > RECAP_WORKOUT_LIST_MAX_PAGES) {
+      return {
+        ok: false,
+        kind: "invalid",
+        message: `tempo weekly-recap: trend workout list exceeded ${RECAP_WORKOUT_LIST_MAX_PAGES} pages (pageSize ${RECAP_WORKOUT_LIST_PAGE_SIZE}); too many workouts in this window.`,
+      };
+    }
+
+    const listRes = await probeWorkoutsList(baseUrl, apiKey, {
+      ...listParamsBase,
+      page,
+    });
+
+    if (listRes.kind === "transport") {
+      return {
+        ok: false,
+        kind: "transport",
+        message: transportErrorMessage(listRes.error),
+        transportError: listRes.error,
+      };
+    }
+    if (listRes.kind === "http") {
+      return {
+        ok: false,
+        kind: "http",
+        httpStatus: listRes.status,
+        message: `tempo weekly-recap: ${workoutsListHttpErrorMessageForCli(
+          listRes.status,
+          listRes.body,
+          apiKey,
+        )}`,
+      };
+    }
+
+    const parsedList = parseWorkoutsListBody(listRes.body);
+    if (!parsedList.ok) {
+      return {
+        ok: false,
+        kind: "invalid",
+        message:
+          "tempo weekly-recap: trend workout list response was not valid JSON with an items array.",
+      };
+    }
+
+    const { items, totalCount } = parsedList.value;
+    allItems.push(...items);
+
+    const done =
+      items.length < RECAP_WORKOUT_LIST_PAGE_SIZE ||
+      (typeof totalCount === "number" &&
+        Number.isFinite(totalCount) &&
+        allItems.length >= totalCount);
+
+    if (done) break;
+    page += 1;
+  }
+
+  return { ok: true, items: allItems };
+}

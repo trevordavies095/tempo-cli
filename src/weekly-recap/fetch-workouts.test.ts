@@ -8,6 +8,7 @@ import * as workoutsList from "../commands/workouts-list.js";
 import {
   dedupeWorkoutIds,
   fetchRecapWorkoutData,
+  fetchTrendWorkoutListItems,
   parseWorkoutsListBody,
   RECAP_SIMILAR_ROUTES_MAX_RESULTS,
   RECAP_WORKOUT_GET_CONCURRENCY,
@@ -265,5 +266,37 @@ describe("fetchRecapWorkoutData", () => {
       maxResults: RECAP_SIMILAR_ROUTES_MAX_RESULTS,
     });
     expect(r.similarRoutesByWorkoutId[W1]?.ok).toBe(true);
+  });
+});
+
+describe("fetchTrendWorkoutListItems", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("paginates with the same page size cap as recap list", async () => {
+    vi.spyOn(workoutsList, "probeWorkoutsList").mockResolvedValue({
+      kind: "ok",
+      status: 200,
+      body: JSON.stringify({
+        items: [{ id: W1 }],
+        totalCount: 1,
+      }),
+    });
+
+    const r = await fetchTrendWorkoutListItems({
+      baseUrl: "http://localhost:5001",
+      apiKey: "k",
+      utcStartDate: "2026-04-13T04:00:00.000Z",
+      utcEndDate: "2026-05-04T03:59:59.999Z",
+    });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.items).toHaveLength(1);
+    const q = vi.mocked(workoutsList.probeWorkoutsList).mock.calls[0]?.[2];
+    expect(q?.pageSize).toBe(RECAP_WORKOUT_LIST_PAGE_SIZE);
+    expect(q?.startDate).toBe("2026-04-13T04:00:00.000Z");
+    expect(q?.endDate).toBe("2026-05-04T03:59:59.999Z");
   });
 });

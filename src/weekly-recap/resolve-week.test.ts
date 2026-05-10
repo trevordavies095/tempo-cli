@@ -5,6 +5,7 @@ import {
   getSystemTimeZone,
   isValidIanaTimeZone,
   resolveRecapWeek,
+  resolveTrendWorkoutListUtcBounds,
 } from "./resolve-week.js";
 
 const NY = "America/New_York";
@@ -161,5 +162,20 @@ describe("resolveRecapWeek", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.message).toContain("week must be");
+  });
+});
+
+describe("resolveTrendWorkoutListUtcBounds", () => {
+  it("returns Mon−21d … Sun−7d inclusive window in UTC for recap week May 4–10 NY", () => {
+    const r = resolveRecapWeek({
+      weekSpec: "2026-W19",
+      timeZoneId: NY,
+      now: dtNy(2026, 1, 1),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const b = resolveTrendWorkoutListUtcBounds(r.value, NY);
+    expect(b.utcStartDate).toBe("2026-04-13T04:00:00.000Z");
+    expect(b.utcEndDate).toBe("2026-05-04T03:59:59.999Z");
   });
 });

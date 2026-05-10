@@ -236,4 +236,33 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(md).not.toContain("Similar route: n/a");
     expect(md).toContain("River loop");
   });
+
+  it("places §2.7 trends after Run-by-run when workouts exist", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 5000,
+      durationS: 1800,
+      avgPaceS: 400,
+      avgHeartRateBpm: 140,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const trendsSection = "## Trends\n\n- **Avg easy HR**: 140 → 138\n";
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      trendsMarkdown: trendsSection,
+    });
+    expect(md.indexOf("## Run-by-run")).toBeLessThan(md.indexOf("## Trends"));
+    expect(md).toContain("## Trends");
+  });
 });

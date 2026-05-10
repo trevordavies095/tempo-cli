@@ -151,7 +151,10 @@ import {
   shoeMileageHumanSuccessLine,
   shoeMileageHttpErrorMessageForCli,
 } from "./commands/shoe-mileage.js";
-import { fetchRecapWorkoutData } from "./weekly-recap/fetch-workouts.js";
+import {
+  fetchRecapWorkoutData,
+  fetchTrendWorkoutListItems,
+} from "./weekly-recap/fetch-workouts.js";
 import {
   computeRecapHrAnalytics,
   formatRecapHrAnalyticsHuman,
@@ -172,7 +175,13 @@ import {
   getSystemTimeZone,
   isValidIanaTimeZone,
   resolveRecapWeek,
+  resolveTrendWorkoutListUtcBounds,
 } from "./weekly-recap/resolve-week.js";
+import {
+  buildTrendsMarkdownSection,
+  computeRecapTrendsSnapshot,
+  recapTrendsSnapshotToJson,
+} from "./weekly-recap/trends.js";
 import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
@@ -2165,6 +2174,15 @@ program
       .choices(["markdown", "json"])
       .default("markdown"),
   )
+  .option(
+    "--include-trends",
+    "Include §2.7 rolling trends (extra GET /workouts for mon−21d…sun−7d). Default: on.",
+    true,
+  )
+  .option(
+    "--no-include-trends",
+    "Skip §2.7 trends for a faster run (no extra workouts list).",
+  )
   .addHelpText(
     "after",
     `
@@ -2173,8 +2191,9 @@ Examples:
   tempo weekly-recap --week current --timezone America/New_York
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
+  tempo weekly-recap --no-include-trends
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), and GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), and GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2190,6 +2209,7 @@ ${HELP_GLOBALS_HINT}
       timezone?: string;
       write?: string;
       format: "markdown" | "json";
+      includeTrends: boolean;
     };
 
     const tzRaw = merged.timezone?.trim();
@@ -2322,13 +2342,26 @@ ${HELP_GLOBALS_HINT}
 
     const v = resolved.value;
 
-    const [fetchData, ywRes, reRes] = await Promise.all([
+    const trendUtc = resolveTrendWorkoutListUtcBounds(v, tz);
+
+    const [fetchData, trendListRes, ywRes, reRes] = await Promise.all([
       fetchRecapWorkoutData({
         baseUrl: merged.baseUrl,
         apiKey: key,
         startDate: v.utcStartDate,
         endDate: v.utcEndDate,
       }),
+      merged.includeTrends
+        ? fetchTrendWorkoutListItems({
+            baseUrl: merged.baseUrl,
+            apiKey: key,
+            utcStartDate: trendUtc.utcStartDate,
+            utcEndDate: trendUtc.utcEndDate,
+          })
+        : Promise.resolve({
+            ok: true as const,
+            items: [] as Record<string, unknown>[],
+          }),
       probeStatsYearlyWeekly(merged.baseUrl, key, {
         periodEndDate: v.localRange.end,
         timezoneOffsetMinutes: v.timezoneOffsetMinutes,
@@ -2408,6 +2441,31 @@ ${HELP_GLOBALS_HINT}
       runCount: fetchData.workoutDetails.length,
     });
 
+    let trendsFetchReason: string | undefined;
+    let trendItems: Record<string, unknown>[] = [];
+    if (merged.includeTrends) {
+      if (trendListRes.ok) {
+        trendItems = trendListRes.items;
+      } else {
+        trendsFetchReason = trendListRes.message;
+      }
+    }
+
+    const trendsSnapshot = computeRecapTrendsSnapshot({
+      resolved: v,
+      timeZoneId: tz,
+      zones: zonesParsed.zones,
+      trendListItems: trendItems,
+      recapWorkoutDetails: workoutDetailSlice,
+      included: merged.includeTrends,
+      fetchFailedReason: trendsFetchReason,
+    });
+
+    const trendsMarkdown = buildTrendsMarkdownSection(
+      trendsSnapshot,
+      unitParsed.unit,
+    );
+
     const reportMarkdown = buildWeeklyRecapMarkdownCore({
       resolved: v,
       timeZoneId: tz,
@@ -2417,6 +2475,7 @@ ${HELP_GLOBALS_HINT}
       shoesBody: fetchData.shoesBody,
       summaryFromStats,
       similarRoutesByWorkoutId: fetchData.similarRoutesByWorkoutId,
+      trendsMarkdown,
     });
 
     const diagnosticHumanLines = [
@@ -2488,6 +2547,7 @@ ${HELP_GLOBALS_HINT}
         },
         recapSummary: summaryFromStats,
       },
+      trends: recapTrendsSnapshotToJson(trendsSnapshot),
     };
 
     if (merged.format === "markdown") {

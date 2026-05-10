@@ -314,5 +314,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("/stats/relative-effort");
     expect(out).toContain("similar-routes");
     expect(out).toContain("maxResults=3");
+    expect(out).toContain("--include-trends");
+    expect(out).toContain("--no-include-trends");
   });
 });

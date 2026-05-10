@@ -32,6 +32,8 @@ export type WeeklyRecapMarkdownInput = {
   similarRoutesByWorkoutId?: Readonly<
     Record<string, RecapSimilarRoutesEntry | undefined>
   >;
+  /** P9: optional §2.7 rolling trends (placed after Run-by-run). */
+  trendsMarkdown?: string;
 };
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
@@ -612,6 +614,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     shoesBody,
     summaryFromStats: sfs,
     similarRoutesByWorkoutId: similarMap,
+    trendsMarkdown,
   } = input;
 
   const shoeLookup = buildShoeLookup(shoesBody);
@@ -636,6 +639,10 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
   if (workoutDetails.length === 0) {
     sections.push("No runs recorded this week.");
     sections.push("");
+    if (trendsMarkdown?.trim()) {
+      sections.push(trendsMarkdown.trim());
+      sections.push("");
+    }
     return sections.join("\n").trimEnd() + "\n";
   }
 
@@ -750,6 +757,11 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   sections.push(blocks.join("\n").trimEnd());
   sections.push("");
+
+  if (trendsMarkdown?.trim()) {
+    sections.push(trendsMarkdown.trim());
+    sections.push("");
+  }
 
   return sections.join("\n").trimEnd() + "\n";
 }
