@@ -311,14 +311,14 @@ export function aggregateSummaryStatsFromDetails(
 }
 
 /** Avg easy-run HR (§2.2): easy-typed runs only, not long/tempo/etc. */
-function isEasyRunTypeForSummary(runType: unknown): boolean {
+export function isEasyRunTypeForSummary(runType: unknown): boolean {
   if (typeof runType !== "string") return false;
   const t = runType.trim().toLowerCase();
   if (t.includes("long")) return false;
   return t.includes("easy") || t.includes("recovery");
 }
 
-function avgEasyRunHr(analytics: RecapHrAnalyticsResult): number | undefined {
+export function avgEasyRunHr(analytics: RecapHrAnalyticsResult): number | undefined {
   const hrs: number[] = [];
   for (const r of analytics.runs) {
     if (!isEasyRunTypeForSummary(r.runType)) continue;
@@ -421,7 +421,7 @@ function zoneAsciiLine(
   return `${zoneLabel} ${bar}  ${pct}%   (${formatZoneDuration(seconds)})`;
 }
 
-function formatWeekZoneSection(a: RecapHrAnalyticsResult): string[] {
+export function formatWeekZoneSection(a: RecapHrAnalyticsResult): string[] {
   const w = a.week;
   if (w.totalHrSeconds <= 0 || !w.zonePct) return [];
 
@@ -600,7 +600,7 @@ function formatRunBlock(args: {
   return lines.join("\n").trimEnd();
 }
 
-function sortDetailsByStart(
+export function sortWorkoutDetailsByStart(
   details: readonly { id: string; body: string }[],
   timeZoneId: string,
 ): { id: string; body: string }[] {
@@ -624,6 +624,161 @@ function sortDetailsByStart(
     if (sa !== sb) return sa - sb;
     return a.id.localeCompare(b.id);
   });
+}
+
+export type RecapSummaryTableRow = {
+  metric: string;
+  thisWeek: string;
+  prevWeek: string;
+  threeWkAvg: string;
+  delta: string;
+};
+
+/** §2.2 summary cells — shared by Markdown and compact plain-text output. */
+export function buildWeeklyRecapSummaryRows(args: {
+  agg: ReturnType<typeof aggregateSummaryStats>;
+  runCount: number;
+  easyAvg: number | undefined;
+  unit: RecapUnitPreference;
+  summaryFromStats?: RecapSummaryFromStats;
+}): RecapSummaryTableRow[] {
+  const { agg, runCount, easyAvg, unit } = args;
+  const sfs = args.summaryFromStats;
+
+  const mileagePrev =
+    sfs?.mileage.prevDistanceM !== undefined
+      ? formatDistanceDm(sfs.mileage.prevDistanceM, unit)
+      : undefined;
+  const mileage3 =
+    sfs?.mileage.threeWkAvgDistanceM !== undefined
+      ? formatDistanceDm(sfs.mileage.threeWkAvgDistanceM, unit)
+      : undefined;
+  const mileageDelta = formatSignedDistanceDelta(sfs?.mileage.deltaVsThreeWkM, unit);
+
+  const runsPrev =
+    sfs?.runs.prev !== undefined ? String(Math.round(sfs.runs.prev)) : undefined;
+  const runs3 = formatRunsAvgOneDecimal(sfs?.runs.threeWkAvg);
+  const runsDelta = formatSignedRunsDelta(sfs?.runs.deltaVsThreeWk);
+
+  const timePrev =
+    sfs?.time.prevDurationS !== undefined
+      ? formatDuration(Math.round(sfs.time.prevDurationS))
+      : undefined;
+  const time3 =
+    sfs?.time.threeWkAvgDurationS !== undefined
+      ? formatDuration(Math.round(sfs.time.threeWkAvgDurationS))
+      : undefined;
+  const timeDelta = formatSignedDurationDeltaSec(sfs?.time.deltaVsThreeWkS);
+
+  const elevPrev =
+    sfs?.elevation.prevElevM !== undefined
+      ? formatElevationM(sfs.elevation.prevElevM, unit)
+      : undefined;
+  const elev3 =
+    sfs?.elevation.threeWkAvgElevM !== undefined
+      ? formatElevationM(sfs.elevation.threeWkAvgElevM, unit)
+      : undefined;
+  const elevDelta = formatSignedElevDeltaM(sfs?.elevation.deltaVsThreeWkM, unit);
+
+  const reThisWeek =
+    agg.totalRe > 0 ? String(Math.round(agg.totalRe)) : EM_DASH;
+  const rePrev =
+    sfs?.relativeEffort.prev !== undefined
+      ? String(Math.round(sfs.relativeEffort.prev))
+      : undefined;
+  const re3 = sfs ? formatReThreeWkCell(sfs.relativeEffort) : undefined;
+  const reDelta = formatSignedIntDelta(sfs?.relativeEffort.deltaVsThreeWk);
+
+  return [
+    {
+      metric: "Mileage",
+      thisWeek: formatDistanceDm(agg.totalDistanceM, unit),
+      prevWeek: cellOrDash(mileagePrev),
+      threeWkAvg: cellOrDash(mileage3),
+      delta: cellOrDash(mileageDelta),
+    },
+    {
+      metric: "Runs",
+      thisWeek: String(runCount),
+      prevWeek: cellOrDash(runsPrev),
+      threeWkAvg: cellOrDash(runs3),
+      delta: cellOrDash(runsDelta),
+    },
+    {
+      metric: "Total time",
+      thisWeek: formatDuration(agg.totalDurationS),
+      prevWeek: cellOrDash(timePrev),
+      threeWkAvg: cellOrDash(time3),
+      delta: cellOrDash(timeDelta),
+    },
+    {
+      metric: "Total elevation",
+      thisWeek: formatElevationM(agg.totalElevM, unit),
+      prevWeek: cellOrDash(elevPrev),
+      threeWkAvg: cellOrDash(elev3),
+      delta: cellOrDash(elevDelta),
+    },
+    {
+      metric: "Relative effort",
+      thisWeek: reThisWeek,
+      prevWeek: cellOrDash(rePrev),
+      threeWkAvg: cellOrDash(re3),
+      delta: cellOrDash(reDelta),
+    },
+    {
+      metric: "Avg easy-run HR",
+      thisWeek:
+        easyAvg !== undefined ? String(easyAvg) : EM_DASH,
+      prevWeek: EM_DASH,
+      threeWkAvg: EM_DASH,
+      delta: EM_DASH,
+    },
+  ];
+}
+
+/** §2.2 summary pipe table (Markdown). */
+export function buildWeeklyRecapSummarySectionMarkdown(args: {
+  agg: ReturnType<typeof aggregateSummaryStats>;
+  runCount: number;
+  easyAvg: number | undefined;
+  unit: RecapUnitPreference;
+  summaryFromStats?: RecapSummaryFromStats;
+}): string {
+  const rows = buildWeeklyRecapSummaryRows(args);
+  const sections: string[] = [];
+  sections.push("## Summary");
+  sections.push("");
+  sections.push("| Metric | This week | Prev week | 3-wk avg | Δ |");
+  sections.push("| --- | --- | --- | --- | --- |");
+  for (const r of rows) {
+    sections.push(
+      `| ${r.metric} | ${r.thisWeek} | ${r.prevWeek} | ${r.threeWkAvg} | ${r.delta} |`,
+    );
+  }
+  sections.push("");
+  return `${sections.join("\n")}\n`;
+}
+
+/** §2.2 summary as plain lines (compact terminal format). */
+export function formatWeeklyRecapSummaryPlain(rows: readonly RecapSummaryTableRow[]): string {
+  const header =
+    "Metric".padEnd(18) +
+    "This week".padEnd(14) +
+    "Prev week".padEnd(14) +
+    "3-wk avg".padEnd(14) +
+    "Δ";
+  const sep = "-".repeat(Math.max(header.length, 72));
+  const body = rows
+    .map(
+      (r) =>
+        r.metric.padEnd(18) +
+        r.thisWeek.padEnd(14) +
+        r.prevWeek.padEnd(14) +
+        r.threeWkAvg.padEnd(14) +
+        r.delta,
+    )
+    .join("\n");
+  return `${header}\n${sep}\n${body}\n`;
 }
 
 /**
@@ -707,72 +862,14 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
   const runCount = workoutDetails.length;
   const easyAvg = avgEasyRunHr(hrAnalytics);
 
-  const mileagePrev =
-    sfs?.mileage.prevDistanceM !== undefined
-      ? formatDistanceDm(sfs.mileage.prevDistanceM, unit)
-      : undefined;
-  const mileage3 =
-    sfs?.mileage.threeWkAvgDistanceM !== undefined
-      ? formatDistanceDm(sfs.mileage.threeWkAvgDistanceM, unit)
-      : undefined;
-  const mileageDelta = formatSignedDistanceDelta(sfs?.mileage.deltaVsThreeWkM, unit);
-
-  const runsPrev =
-    sfs?.runs.prev !== undefined ? String(Math.round(sfs.runs.prev)) : undefined;
-  const runs3 = formatRunsAvgOneDecimal(sfs?.runs.threeWkAvg);
-  const runsDelta = formatSignedRunsDelta(sfs?.runs.deltaVsThreeWk);
-
-  const timePrev =
-    sfs?.time.prevDurationS !== undefined
-      ? formatDuration(Math.round(sfs.time.prevDurationS))
-      : undefined;
-  const time3 =
-    sfs?.time.threeWkAvgDurationS !== undefined
-      ? formatDuration(Math.round(sfs.time.threeWkAvgDurationS))
-      : undefined;
-  const timeDelta = formatSignedDurationDeltaSec(sfs?.time.deltaVsThreeWkS);
-
-  const elevPrev =
-    sfs?.elevation.prevElevM !== undefined
-      ? formatElevationM(sfs.elevation.prevElevM, unit)
-      : undefined;
-  const elev3 =
-    sfs?.elevation.threeWkAvgElevM !== undefined
-      ? formatElevationM(sfs.elevation.threeWkAvgElevM, unit)
-      : undefined;
-  const elevDelta = formatSignedElevDeltaM(sfs?.elevation.deltaVsThreeWkM, unit);
-
-  const reThisWeek =
-    agg.totalRe > 0 ? String(Math.round(agg.totalRe)) : EM_DASH;
-  const rePrev =
-    sfs?.relativeEffort.prev !== undefined
-      ? String(Math.round(sfs.relativeEffort.prev))
-      : undefined;
-  const re3 = sfs ? formatReThreeWkCell(sfs.relativeEffort) : undefined;
-  const reDelta = formatSignedIntDelta(sfs?.relativeEffort.deltaVsThreeWk);
-
-  sections.push("## Summary");
-  sections.push("");
-  sections.push("| Metric | This week | Prev week | 3-wk avg | Δ |");
-  sections.push("| --- | --- | --- | --- | --- |");
   sections.push(
-    `| Mileage | ${formatDistanceDm(agg.totalDistanceM, unit)} | ${cellOrDash(mileagePrev)} | ${cellOrDash(mileage3)} | ${cellOrDash(mileageDelta)} |`,
-  );
-  sections.push(
-    `| Runs | ${runCount} | ${cellOrDash(runsPrev)} | ${cellOrDash(runs3)} | ${cellOrDash(runsDelta)} |`,
-  );
-  sections.push(
-    `| Total time | ${formatDuration(agg.totalDurationS)} | ${cellOrDash(timePrev)} | ${cellOrDash(time3)} | ${cellOrDash(timeDelta)} |`,
-  );
-  sections.push(
-    `| Total elevation | ${formatElevationM(agg.totalElevM, unit)} | ${cellOrDash(elevPrev)} | ${cellOrDash(elev3)} | ${cellOrDash(elevDelta)} |`,
-  );
-  sections.push(
-    `| Relative effort | ${reThisWeek} | ${cellOrDash(rePrev)} | ${cellOrDash(re3)} | ${cellOrDash(reDelta)} |`,
-  );
-  /** Prev / 3-wk need per-run HR history; no stats endpoint in P7 (see recap-summary-stats). */
-  sections.push(
-    `| Avg easy-run HR | ${easyAvg !== undefined ? String(easyAvg) : EM_DASH} | ${EM_DASH} | ${EM_DASH} | ${EM_DASH} |`,
+    buildWeeklyRecapSummarySectionMarkdown({
+      agg,
+      runCount,
+      easyAvg,
+      unit,
+      summaryFromStats: sfs,
+    }).trimEnd(),
   );
   sections.push("");
 
@@ -781,7 +878,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
   sections.push("## Run-by-run");
   sections.push("");
 
-  const ordered = sortDetailsByStart(workoutDetails, timeZoneId);
+  const ordered = sortWorkoutDetailsByStart(workoutDetails, timeZoneId);
   const blocks: string[] = [];
   for (const d of ordered) {
     const w = parseJsonObject(d.body);

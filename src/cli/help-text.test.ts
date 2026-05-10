@@ -298,6 +298,7 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("--write");
     expect(out).toContain("--format");
     expect(out).toContain("markdown");
+    expect(out).toContain("compact");
     expect(out).toContain("tempo --help");
     expect(out).toContain("weekly-recap");
     expect(out).toContain("Global --output");

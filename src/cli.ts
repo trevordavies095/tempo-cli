@@ -168,10 +168,12 @@ import {
   formatRecapHrAnalyticsHuman,
   recapHrAnalyticsToJson,
 } from "./weekly-recap/hr-analytics.js";
+import { buildWeeklyRecapCompact } from "./weekly-recap/compact-report.js";
 import {
   aggregateSummaryStatsFromDetails,
   buildWeeklyRecapMarkdownCore,
 } from "./weekly-recap/markdown-report.js";
+import { buildWeeklyRecapReportPayload } from "./weekly-recap/recap-json-report.js";
 import { buildRecapSummaryFromStats } from "./weekly-recap/recap-summary-stats.js";
 import {
   formatRecapZonesSummary,
@@ -2195,9 +2197,9 @@ program
   .addOption(
     new Option(
       "--format <mode>",
-      'Report payload: "markdown" (weekly recap §2.1–2.4 document) or "json" (structured diagnostics without Markdown)',
+      'Report payload: "markdown" (full weekly recap document), "compact" (terminal-friendly summary), or "json" (structured diagnostics without Markdown body)',
     )
-      .choices(["markdown", "json"])
+      .choices(["markdown", "json", "compact"])
       .default("markdown"),
   )
   .option(
@@ -2231,7 +2233,7 @@ Examples:
   tempo weekly-recap --write ./recap.md
   tempo weekly-recap --no-include-trends
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the full Markdown weekly recap; --format compact prints a shorter terminal summary; --format json prints structured diagnostics only (no recap body). JSON CLI mode (--output json) always includes a structured "report" object (week, range, summary, zones, runs, trends, subjective) alongside existing keys; it includes reportMarkdown when --format markdown and compactText when --format compact. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2246,7 +2248,7 @@ ${HELP_GLOBALS_HINT}
       week: string;
       timezone?: string;
       write?: string;
-      format: "markdown" | "json";
+      format: "markdown" | "json" | "compact";
       includeTrends: boolean;
       prescribedFile?: string;
       subjectiveFile?: string;
@@ -2713,8 +2715,27 @@ ${HELP_GLOBALS_HINT}
       formatRecapHrAnalyticsHuman(hrAnalytics),
     ].join("\n");
 
+    const compactText =
+      merged.format === "compact"
+        ? buildWeeklyRecapCompact({
+            resolved: v,
+            timeZoneId: tz,
+            unit: unitParsed.unit,
+            hrAnalytics,
+            workoutDetails: workoutDetailSlice,
+            summaryFromStats,
+            notableSnapshot,
+          })
+        : undefined;
+
     const humanSuccessBody =
-      merged.format === "markdown" ? reportMarkdown : diagnosticHumanLines;
+      merged.format === "markdown"
+        ? reportMarkdown
+        : merged.format === "compact"
+          ? (compactText ?? "")
+          : diagnosticHumanLines;
+
+    const trendsJson = recapTrendsSnapshotToJson(trendsSnapshot);
 
     const jsonBody: Record<string, unknown> = {
       ok: true,
@@ -2767,15 +2788,26 @@ ${HELP_GLOBALS_HINT}
         },
         recapSummary: summaryFromStats,
       },
-      trends: recapTrendsSnapshotToJson(trendsSnapshot),
+      trends: trendsJson,
       notable: recapNotableSnapshotToJson(notableSnapshot),
       prescribed: qualityOut.json,
       longRun: longRunOut.json,
       subjective: subjectivePayload,
+      report: buildWeeklyRecapReportPayload({
+        resolved: v,
+        hrAnalytics,
+        workoutDetails: workoutDetailSlice,
+        summaryFromStats,
+        trendsJson,
+        subjective: subjectivePayload,
+      }),
     };
 
     if (merged.format === "markdown") {
       jsonBody.reportMarkdown = reportMarkdown;
+    }
+    if (merged.format === "compact" && compactText !== undefined) {
+      jsonBody.compactText = compactText;
     }
 
     const writePath = merged.write?.trim();
