@@ -32,6 +32,8 @@ export type WeeklyRecapMarkdownInput = {
   similarRoutesByWorkoutId?: Readonly<
     Record<string, RecapSimilarRoutesEntry | undefined>
   >;
+  /** P11: optional §2.5 quality sessions (after Run-by-run, before Trends). */
+  qualitySessionsMarkdown?: string;
   /** P9: optional §2.7 rolling trends (placed after Run-by-run). */
   trendsMarkdown?: string;
   /** P10: optional §2.8 Notable (placed after Trends). */
@@ -616,6 +618,7 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
     shoesBody,
     summaryFromStats: sfs,
     similarRoutesByWorkoutId: similarMap,
+    qualitySessionsMarkdown,
     trendsMarkdown,
     notableMarkdown,
   } = input;
@@ -642,6 +645,10 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
   if (workoutDetails.length === 0) {
     sections.push("No runs recorded this week.");
     sections.push("");
+    if (qualitySessionsMarkdown?.trim()) {
+      sections.push(qualitySessionsMarkdown.trim());
+      sections.push("");
+    }
     if (trendsMarkdown?.trim()) {
       sections.push(trendsMarkdown.trim());
       sections.push("");
@@ -764,6 +771,11 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   sections.push(blocks.join("\n").trimEnd());
   sections.push("");
+
+  if (qualitySessionsMarkdown?.trim()) {
+    sections.push(qualitySessionsMarkdown.trim());
+    sections.push("");
+  }
 
   if (trendsMarkdown?.trim()) {
     sections.push(trendsMarkdown.trim());

@@ -268,6 +268,48 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(md).toContain("## Notable");
   });
 
+  it("places §2.5 Quality after Run-by-run and before §2.7 Trends (and Notable last)", () => {
+    const workout = {
+      startedAt: "2026-05-09T14:30:00.000Z",
+      runType: "Easy Run",
+      distanceM: 5000,
+      durationS: 1800,
+      avgPaceS: 400,
+      avgHeartRateBpm: 140,
+    };
+    const details = [{ id: W1, body: JSON.stringify(workout) }];
+    const hrAnalytics = computeRecapHrAnalytics({
+      zones: fiveZones,
+      heartRateZonesBody: zonesBody(),
+      workoutDetails: details,
+    });
+    const qualitySection = "### Quality session — placeholder\n\nPrescribed: test\n";
+    const trendsSection = "## Trends\n\n- **Avg easy HR**: 140 → 138\n";
+    const notableSection = "## Notable\n\n- No PRs\n";
+    const md = buildWeeklyRecapMarkdownCore({
+      resolved: resolvedSample,
+      timeZoneId: "America/New_York",
+      unit: "metric",
+      hrAnalytics,
+      workoutDetails: details,
+      shoesBody: "[]",
+      qualitySessionsMarkdown: qualitySection,
+      trendsMarkdown: trendsSection,
+      notableMarkdown: notableSection,
+    });
+    const iRun = md.indexOf("## Run-by-run");
+    const iQuality = md.indexOf("### Quality session");
+    const iTrends = md.indexOf("## Trends");
+    const iNotable = md.indexOf("## Notable");
+    expect(iRun).toBeGreaterThan(-1);
+    expect(iQuality).toBeGreaterThan(-1);
+    expect(iTrends).toBeGreaterThan(-1);
+    expect(iNotable).toBeGreaterThan(-1);
+    expect(iRun).toBeLessThan(iQuality);
+    expect(iQuality).toBeLessThan(iTrends);
+    expect(iTrends).toBeLessThan(iNotable);
+  });
+
   it("places §2.7 trends after Run-by-run when workouts exist", () => {
     const workout = {
       startedAt: "2026-05-09T14:30:00.000Z",

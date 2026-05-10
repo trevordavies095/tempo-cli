@@ -317,5 +317,6 @@ describe("subcommand --help (P6)", () => {
     expect(out).toContain("--include-trends");
     expect(out).toContain("--no-include-trends");
     expect(out).toContain("/stats/best-efforts");
+    expect(out).toContain("--prescribed-file");
   });
 });

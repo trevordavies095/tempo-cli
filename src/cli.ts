@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import { computePreFlagDefaults, loadConfigFile } from "./config/file.js";
 import { getDefaultTempoCacheDir } from "./config/cache-path.js";
+import {
+  expandUserHomePath,
+  getDefaultPrescribedFilePath,
+} from "./config/prescribed-path.js";
 import { getDefaultConfigPath } from "./config/path.js";
 import {
   pickApiKey,
@@ -185,6 +189,7 @@ import {
   buildRecapNotableSnapshot,
   recapNotableSnapshotToJson,
 } from "./weekly-recap/notable.js";
+import { buildPrescribedQualityOutput } from "./weekly-recap/quality-sessions.js";
 import {
   buildTrendsMarkdownSection,
   computeRecapTrendsSnapshot,
@@ -2191,6 +2196,10 @@ program
     "--no-include-trends",
     "Skip §2.7 trends for a faster run (no extra workouts list).",
   )
+  .option(
+    "--prescribed-file <path>",
+    "YAML prescribed week for §2.5 quality sessions (default: prescribed-{ISO week}.yaml beside config)",
+  )
   .addHelpText(
     "after",
     `
@@ -2201,7 +2210,7 @@ Examples:
   tempo weekly-recap --write ./recap.md
   tempo weekly-recap --no-include-trends
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/yearly-weekly (periodEndDate = recap Sunday, timezoneOffsetMinutes), GET /stats/relative-effort (timezoneOffsetMinutes) for §2.2 summary columns, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2218,6 +2227,7 @@ ${HELP_GLOBALS_HINT}
       write?: string;
       format: "markdown" | "json";
       includeTrends: boolean;
+      prescribedFile?: string;
     };
 
     const tzRaw = merged.timezone?.trim();
@@ -2431,6 +2441,26 @@ ${HELP_GLOBALS_HINT}
       body: d.body,
     }));
 
+    const prescribedPathResolved = expandUserHomePath(
+      merged.prescribedFile?.trim() ||
+        getDefaultPrescribedFilePath(v.isoWeekId),
+    );
+    let prescribedRaw: string | undefined;
+    try {
+      prescribedRaw = await readFile(prescribedPathResolved, "utf8");
+    } catch {
+      prescribedRaw = undefined;
+    }
+
+    const qualityOut = buildPrescribedQualityOutput({
+      fileContent: prescribedRaw,
+      resolvedPath: prescribedPathResolved,
+      resolvedIsoWeekId: v.isoWeekId,
+      timeZoneId: tz,
+      workoutDetails: workoutDetailSlice,
+      timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
+    });
+
     const yearlyWeeklyOk = ywRes.kind === "ok";
     const yearlyWeeklyBody = yearlyWeeklyOk ? ywRes.body : undefined;
     const relativeEffortOk = reRes.kind === "ok";
@@ -2525,6 +2555,7 @@ ${HELP_GLOBALS_HINT}
       shoesBody: fetchData.shoesBody,
       summaryFromStats,
       similarRoutesByWorkoutId: fetchData.similarRoutesByWorkoutId,
+      qualitySessionsMarkdown: qualityOut.markdown,
       trendsMarkdown,
       notableMarkdown,
     });
@@ -2600,6 +2631,7 @@ ${HELP_GLOBALS_HINT}
       },
       trends: recapTrendsSnapshotToJson(trendsSnapshot),
       notable: recapNotableSnapshotToJson(notableSnapshot),
+      prescribed: qualityOut.json,
     };
 
     if (merged.format === "markdown") {
