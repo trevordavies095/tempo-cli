@@ -1,0 +1,600 @@
+/**
+ * Weekly recap Markdown §2.1–§2.4 (P6). Prev week / 3-wk / Δ columns stay placeholders until P7 stats API.
+ */
+
+import { DateTime } from "luxon";
+
+import { isPlainObject, pickFirst } from "../output/human-summary.js";
+import type { RecapHrAnalyticsResult, RecapHrRunRow } from "./hr-analytics.js";
+import type { RecapUnitPreference } from "./recap-settings.js";
+import type { RecapWeekResolved } from "./resolve-week.js";
+
+const METERS_PER_MILE = 1609.344;
+const ZONE_BAR_WIDTH = 35;
+
+export type WeeklyRecapMarkdownInput = {
+  resolved: RecapWeekResolved;
+  timeZoneId: string;
+  unit: RecapUnitPreference;
+  hrAnalytics: RecapHrAnalyticsResult;
+  workoutDetails: readonly { id: string; body: string }[];
+  shoesBody: string;
+};
+
+function parseJsonObject(body: string): Record<string, unknown> | undefined {
+  const t = body.trim();
+  if (!t) return undefined;
+  try {
+    const v = JSON.parse(t) as unknown;
+    return isPlainObject(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Shoes list: root array or `{ items | shoes }`. */
+function parseShoesArray(body: string): Record<string, unknown>[] {
+  const trimmed = body.trim();
+  if (!trimmed) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed) as unknown;
+  } catch {
+    return [];
+  }
+  if (Array.isArray(parsed)) {
+    return parsed.filter(isPlainObject) as Record<string, unknown>[];
+  }
+  if (!isPlainObject(parsed)) return [];
+  const inner = pickFirst(parsed, ["items", "Items", "shoes", "Shoes", "data", "Data"]);
+  if (!Array.isArray(inner)) return [];
+  return inner.filter(isPlainObject) as Record<string, unknown>[];
+}
+
+function shoeIdKey(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim();
+  return s.length > 0 ? s : undefined;
+}
+
+/**
+ * Mileage from shoe row: prefer explicit miles-like field; treat large numbers as meters → mi.
+ */
+function pickShoeMileageMi(item: Record<string, unknown>): number | undefined {
+  const mileLike = pickFirst(item, [
+    "totalMileageMi",
+    "totalMileageMiles",
+    "mileageMi",
+    "mileageMiles",
+  ]);
+  if (typeof mileLike === "number" && Number.isFinite(mileLike) && mileLike >= 0) {
+    return mileLike;
+  }
+  const raw = pickFirst(item, [
+    "mileage",
+    "Mileage",
+    "totalMileage",
+    "TotalMileage",
+    "distance",
+    "Distance",
+  ]);
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return undefined;
+  if (raw > 500) return raw / METERS_PER_MILE;
+  return raw;
+}
+
+function buildShoeLookup(
+  shoesBody: string,
+): Map<string, { label: string; mileageMi?: number }> {
+  const map = new Map<string, { label: string; mileageMi?: number }>();
+  for (const item of parseShoesArray(shoesBody)) {
+    const idRaw = pickFirst(item, ["id", "Id", "shoeId", "ShoeId"]);
+    const id = shoeIdKey(idRaw);
+    if (!id) continue;
+    const brand = pickFirst(item, ["brand", "Brand"]);
+    const model = pickFirst(item, ["model", "Model"]);
+    const name = pickFirst(item, ["name", "Name", "nickname", "Nickname"]);
+    const bits: string[] = [];
+    if (typeof brand === "string" && brand.trim()) bits.push(brand.trim());
+    if (typeof model === "string" && model.trim()) bits.push(model.trim());
+    const label =
+      bits.length > 0
+        ? bits.join(" ")
+        : typeof name === "string" && name.trim()
+          ? name.trim()
+          : id.slice(0, 8);
+    const mileageMi = pickShoeMileageMi(item);
+    map.set(id.toLowerCase(), { label, mileageMi });
+  }
+  return map;
+}
+
+function formatDistanceDm(meters: number, unit: RecapUnitPreference): string {
+  if (!Number.isFinite(meters) || meters < 0) return "n/a";
+  if (unit === "imperial") {
+    const mi = meters / METERS_PER_MILE;
+    return `${mi.toFixed(2)} mi`;
+  }
+  const km = meters / 1000;
+  return `${km.toFixed(2)} km`;
+}
+
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "n/a";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+/** `avgPaceS` from Tempo is seconds per kilometer. */
+function formatPaceFromSecondsPerKm(
+  secPerKm: number,
+  unit: RecapUnitPreference,
+): string {
+  if (!Number.isFinite(secPerKm) || secPerKm <= 0) return "n/a";
+  const secPerUnit =
+    unit === "imperial" ? secPerKm * (METERS_PER_MILE / 1000) : secPerKm;
+  const m = Math.floor(secPerUnit / 60);
+  const s = Math.round(secPerUnit % 60);
+  const suf = unit === "imperial" ? "/mi" : "/km";
+  return `${m}:${String(s).padStart(2, "0")}${suf}`;
+}
+
+function formatElevationM(m: number | undefined, unit: RecapUnitPreference): string {
+  if (m === undefined || !Number.isFinite(m)) return "n/a";
+  if (unit === "imperial") {
+    const ft = m * 3.28084;
+    return `${Math.round(ft)} ft`;
+  }
+  return `${Math.round(m)} m`;
+}
+
+function formatStartedTitle(
+  startedAt: string | undefined,
+  timeZoneId: string,
+): { titleDate: string; sortKey: number } {
+  if (!startedAt?.trim()) {
+    return { titleDate: "Unknown date", sortKey: 0 };
+  }
+  const dt = DateTime.fromISO(startedAt.trim(), { setZone: true });
+  if (!dt.isValid) {
+    return { titleDate: startedAt.trim(), sortKey: 0 };
+  }
+  const local = dt.setZone(timeZoneId);
+  const titleDate = `${local.toFormat("ccc")} ${local.toFormat("MMM d")}`;
+  return { titleDate, sortKey: local.toMillis() };
+}
+
+function formatSplitList(
+  splits: unknown,
+  unit: RecapUnitPreference,
+): string | undefined {
+  if (!Array.isArray(splits) || splits.length === 0) return undefined;
+  const parts: string[] = [];
+  for (const row of splits) {
+    if (!isPlainObject(row)) continue;
+    const paceS = pickFirst(row, ["paceS", "PaceS"]);
+    if (typeof paceS === "number" && Number.isFinite(paceS) && paceS > 0) {
+      parts.push(formatPaceFromSecondsPerKm(paceS, unit));
+    }
+  }
+  return parts.length > 0 ? parts.join(" / ") : undefined;
+}
+
+function formatWeatherLine(
+  workout: Record<string, unknown>,
+  unit: RecapUnitPreference,
+): string | undefined {
+  const w = pickFirst(workout, ["weather", "Weather"]);
+  if (!isPlainObject(w)) return undefined;
+  const bits: string[] = [];
+  const temp = pickFirst(w, ["temperature", "Temperature", "temp", "Temp"]);
+  if (typeof temp === "number" && Number.isFinite(temp)) {
+    if (unit === "imperial") {
+      const f = (temp * 9) / 5 + 32;
+      bits.push(`${Math.round(f)}°F`);
+    } else {
+      bits.push(`${Math.round(temp)}°C`);
+    }
+  }
+  const hum = pickFirst(w, ["humidity", "Humidity", "relativeHumidity"]);
+  if (typeof hum === "number" && Number.isFinite(hum)) {
+    bits.push(`${Math.round(hum)}% RH`);
+  }
+  const wind = pickFirst(w, ["wind", "Wind", "windSpeed"]);
+  if (typeof wind === "string" && wind.trim()) bits.push(wind.trim());
+  else if (typeof wind === "number" && Number.isFinite(wind)) bits.push(`${wind}`);
+  return bits.length > 0 ? bits.join(", ") : undefined;
+}
+
+function formatElevGainLoss(workout: Record<string, unknown>, unit: RecapUnitPreference): string | undefined {
+  const g = pickFirst(workout, ["elevGainM", "ElevGainM", "elevationGainM"]);
+  const l = pickFirst(workout, ["elevLossM", "ElevLossM", "elevationLossM"]);
+  const up =
+    typeof g === "number" && Number.isFinite(g)
+      ? formatElevationM(g, unit)
+      : undefined;
+  const dn =
+    typeof l === "number" && Number.isFinite(l)
+      ? formatElevationM(l, unit)
+      : undefined;
+  if (!up && !dn) return undefined;
+  const bits: string[] = [];
+  if (up) bits.push(`↑${up}`);
+  if (dn) bits.push(`↓${dn}`);
+  return bits.join(" ");
+}
+
+function hrRowById(
+  analytics: RecapHrAnalyticsResult,
+  id: string,
+): RecapHrRunRow | undefined {
+  return analytics.runs.find((r) => r.id.toLowerCase() === id.toLowerCase());
+}
+
+function aggregateSummaryStats(
+  workouts: readonly Record<string, unknown>[],
+): {
+  totalDistanceM: number;
+  totalDurationS: number;
+  totalElevM: number;
+  totalRe: number;
+} {
+  let totalDistanceM = 0;
+  let totalDurationS = 0;
+  let totalElevM = 0;
+  let totalRe = 0;
+  for (const w of workouts) {
+    const dm = pickFirst(w, ["distanceM", "Distance"]);
+    if (typeof dm === "number" && Number.isFinite(dm)) totalDistanceM += dm;
+    const ds = pickFirst(w, ["durationS", "Duration"]);
+    if (typeof ds === "number" && Number.isFinite(ds)) totalDurationS += ds;
+    const el = pickFirst(w, ["elevGainM", "ElevGainM"]);
+    if (typeof el === "number" && Number.isFinite(el)) totalElevM += el;
+    const re = pickFirst(w, ["relativeEffort", "RelativeEffort"]);
+    if (typeof re === "number" && Number.isFinite(re)) totalRe += re;
+  }
+  return {
+    totalDistanceM,
+    totalDurationS,
+    totalElevM,
+    totalRe,
+  };
+}
+
+/** Avg easy-run HR (§2.2): easy-typed runs only, not long/tempo/etc. */
+function isEasyRunTypeForSummary(runType: unknown): boolean {
+  if (typeof runType !== "string") return false;
+  const t = runType.trim().toLowerCase();
+  if (t.includes("long")) return false;
+  return t.includes("easy") || t.includes("recovery");
+}
+
+function avgEasyRunHr(analytics: RecapHrAnalyticsResult): number | undefined {
+  const hrs: number[] = [];
+  for (const r of analytics.runs) {
+    if (!isEasyRunTypeForSummary(r.runType)) continue;
+    if (r.avgHr !== undefined) hrs.push(r.avgHr);
+  }
+  if (hrs.length === 0) return undefined;
+  return Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length);
+}
+
+function formatZoneDuration(seconds: number): string {
+  if (seconds <= 0) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function zoneAsciiLine(
+  zoneLabel: string,
+  pct: number,
+  seconds: number,
+): string {
+  const filled = Math.round((ZONE_BAR_WIDTH * pct) / 100);
+  const bar = `${"█".repeat(filled)}${"░".repeat(Math.max(0, ZONE_BAR_WIDTH - filled))}`;
+  return `${zoneLabel} ${bar}  ${pct}%   (${formatZoneDuration(seconds)})`;
+}
+
+function formatWeekZoneSection(a: RecapHrAnalyticsResult): string[] {
+  const w = a.week;
+  if (w.totalHrSeconds <= 0 || !w.zonePct) return [];
+
+  const lines: string[] = [];
+  lines.push("## HR zone distribution (week total)");
+  lines.push("");
+
+  const zs = w.zoneSeconds;
+  const pct = w.zonePct;
+  for (let i = 0; i < zs.length; i++) {
+    const zi = i + 1;
+    const key = `z${zi}`;
+    const p = pct[key];
+    if (p === undefined) continue;
+    lines.push(zoneAsciiLine(`Z${zi}`, p, zs[i] ?? 0));
+  }
+  lines.push("");
+  if (w.z1z2Pct !== undefined) {
+    const flag =
+      w.z1z2TargetMet === false
+        ? " **Below** typical marathon base target (≥80% Z1+Z2)."
+        : w.z1z2TargetMet === true
+          ? " On target for ≥80% Z1+Z2."
+          : "";
+    lines.push(
+      `Target for marathon base phase: **≥80% in Z1+Z2**. This week: **${w.z1z2Pct}%**.${flag}`,
+    );
+    lines.push("");
+  }
+  return lines;
+}
+
+function formatRunBlock(args: {
+  workout: Record<string, unknown>;
+  hr: RecapHrRunRow | undefined;
+  unit: RecapUnitPreference;
+  shoeLookup: Map<string, { label: string; mileageMi?: number }>;
+  timeZoneId: string;
+}): string {
+  const { workout, hr, unit, shoeLookup, timeZoneId } = args;
+
+  const startedRaw = pickFirst(workout, ["startedAt", "StartedAt"]);
+  const startedAt =
+    typeof startedRaw === "string" && startedRaw.trim()
+      ? startedRaw.trim()
+      : undefined;
+  const { titleDate } = formatStartedTitle(startedAt, timeZoneId);
+
+  const runTypeRaw = pickFirst(workout, ["runType", "RunType"]);
+  const runType =
+    typeof runTypeRaw === "string" && runTypeRaw.trim()
+      ? runTypeRaw.trim()
+      : "Run";
+
+  const dm = pickFirst(workout, ["distanceM", "Distance"]);
+  const distanceM =
+    typeof dm === "number" && Number.isFinite(dm) ? dm : undefined;
+
+  const ds = pickFirst(workout, ["durationS", "Duration"]);
+  const durationS =
+    typeof ds === "number" && Number.isFinite(ds) ? ds : undefined;
+
+  const distStr =
+    distanceM !== undefined ? formatDistanceDm(distanceM, unit) : "n/a";
+  const durStr =
+    durationS !== undefined ? formatDuration(durationS) : "n/a";
+
+  const lines: string[] = [];
+  lines.push(`### ${titleDate} — ${runType} — ${distStr} / ${durStr}`);
+  lines.push("");
+
+  const paceBits: string[] = [];
+  const avgPace = pickFirst(workout, ["avgPaceS", "AvgPaceS"]);
+  if (typeof avgPace === "number" && Number.isFinite(avgPace)) {
+    paceBits.push(`Pace: ${formatPaceFromSecondsPerKm(avgPace, unit)}`);
+  }
+  const avgHr = pickFirst(workout, ["avgHeartRateBpm", "AvgHeartRateBpm"]);
+  if (typeof avgHr === "number" && Number.isFinite(avgHr)) {
+    let hrChunk = `Avg HR ${Math.round(avgHr)}`;
+    if (hr?.pctMaxHr !== null && hr?.pctMaxHr !== undefined) {
+      hrChunk += ` (${hr.pctMaxHr}% max)`;
+    }
+    paceBits.push(hrChunk);
+  }
+  const maxHr = pickFirst(workout, ["maxHeartRateBpm", "MaxHeartRateBpm"]);
+  if (typeof maxHr === "number" && Number.isFinite(maxHr)) {
+    paceBits.push(`Max HR ${Math.round(maxHr)}`);
+  }
+  const cad = pickFirst(workout, ["avgCadenceRpm", "AvgCadenceRpm"]);
+  if (typeof cad === "number" && Number.isFinite(cad)) {
+    paceBits.push(`Cad ${Math.round(cad)} spm`);
+  }
+  if (paceBits.length > 0) {
+    lines.push(`${paceBits.join("  ·  ")}`);
+    lines.push("");
+  }
+
+  const splitsRaw = pickFirst(workout, ["splits", "Splits"]);
+  const splitStr = formatSplitList(splitsRaw, unit);
+  lines.push(`Splits: ${splitStr ?? "n/a"}`);
+  lines.push("");
+
+  if (hr && hr.q1AvgHr !== undefined && hr.q4AvgHr !== undefined && hr.driftBpm !== undefined) {
+    const sign = hr.driftBpm >= 0 ? "+" : "";
+    let driftLine = `HR drift: ${hr.q1AvgHr} → ${hr.q4AvgHr} (${sign}${hr.driftBpm} bpm)`;
+    if (hr.driftSeverityLabel) driftLine += ` ${hr.driftSeverityLabel}`;
+    lines.push(driftLine);
+  } else {
+    lines.push(`HR drift: n/a`);
+  }
+  lines.push("");
+
+  const zLine = hr?.zonePct
+    ? Object.keys(hr.zonePct)
+        .sort()
+        .map((k) => `${k.toUpperCase()} ${hr.zonePct![k]}%`)
+        .join(" · ")
+    : undefined;
+  lines.push(`Time in zones: ${zLine ?? "n/a (no HR data)"}`);
+  lines.push("");
+
+  const elev = formatElevGainLoss(workout, unit);
+  const wx = formatWeatherLine(workout, unit);
+  const envBits: string[] = [];
+  if (elev) envBits.push(`Elevation: ${elev}`);
+  if (wx) envBits.push(`Weather: ${wx}`);
+  if (envBits.length > 0) {
+    lines.push(`${envBits.join("  ·  ")}`);
+    lines.push("");
+  }
+
+  const shoeId = pickFirst(workout, ["shoeId", "ShoeId"]);
+  if (typeof shoeId === "string" && shoeId.trim()) {
+    const lu = shoeLookup.get(shoeId.trim().toLowerCase());
+    if (lu) {
+      const mi =
+        lu.mileageMi !== undefined
+          ? ` (${lu.mileageMi.toFixed(0)} mi)`
+          : "";
+      lines.push(`Shoe: ${lu.label}${mi}`);
+    } else {
+      lines.push(`Shoe: n/a (id ${shoeId.trim()})`);
+    }
+    lines.push("");
+  }
+
+  const re = pickFirst(workout, ["relativeEffort", "RelativeEffort"]);
+  if (typeof re === "number" && Number.isFinite(re)) {
+    lines.push(`Relative effort: ${Math.round(re)}`);
+    lines.push("");
+  }
+
+  lines.push(`Similar route: n/a`);
+  lines.push("");
+
+  const notes = pickFirst(workout, ["notes", "Notes"]);
+  if (typeof notes === "string" && notes.trim()) {
+    lines.push(`Notes (from app): "${notes.trim()}"`);
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+function sortDetailsByStart(
+  details: readonly { id: string; body: string }[],
+  timeZoneId: string,
+): { id: string; body: string }[] {
+  return [...details].sort((a, b) => {
+    const wa = parseJsonObject(a.body);
+    const wb = parseJsonObject(b.body);
+    const sa =
+      wa && typeof pickFirst(wa, ["startedAt", "StartedAt"]) === "string"
+        ? DateTime.fromISO(
+            (pickFirst(wa, ["startedAt", "StartedAt"]) as string).trim(),
+            { setZone: true },
+          ).toMillis()
+        : 0;
+    const sb =
+      wb && typeof pickFirst(wb, ["startedAt", "StartedAt"]) === "string"
+        ? DateTime.fromISO(
+            (pickFirst(wb, ["startedAt", "StartedAt"]) as string).trim(),
+            { setZone: true },
+          ).toMillis()
+        : 0;
+    if (sa !== sb) return sa - sb;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+/**
+ * Builds Markdown for §2.1–§2.4: header, summary table, optional zone block, run blocks.
+ */
+export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): string {
+  const {
+    resolved,
+    timeZoneId,
+    unit,
+    hrAnalytics,
+    workoutDetails,
+    shoesBody,
+  } = input;
+
+  const shoeLookup = buildShoeLookup(shoesBody);
+
+  const rangeLabel = (() => {
+    const a = DateTime.fromISO(resolved.localRange.start, {
+      zone: timeZoneId,
+    });
+    const b = DateTime.fromISO(resolved.localRange.end, { zone: timeZoneId });
+    if (!a.isValid || !b.isValid) {
+      return `${resolved.localRange.start} – ${resolved.localRange.end}`;
+    }
+    const y = b.year;
+    return `${a.toFormat("MMM d")} – ${b.toFormat("MMM d")}, ${y}`;
+  })();
+
+  const sections: string[] = [];
+
+  sections.push(`# Weekly Recap — Week of ${rangeLabel}`);
+  sections.push("");
+
+  if (workoutDetails.length === 0) {
+    sections.push("No runs recorded this week.");
+    sections.push("");
+    return sections.join("\n").trimEnd() + "\n";
+  }
+
+  const parsedWorkouts: Record<string, unknown>[] = [];
+  for (const d of workoutDetails) {
+    const w = parseJsonObject(d.body);
+    if (w) parsedWorkouts.push(w);
+  }
+
+  const agg = aggregateSummaryStats(parsedWorkouts);
+  const runCount = workoutDetails.length;
+  const easyAvg = avgEasyRunHr(hrAnalytics);
+
+  sections.push("## Summary");
+  sections.push("");
+  sections.push("| Metric | This week | Prev week | 3-wk avg | Δ |");
+  sections.push("| --- | --- | --- | --- | --- |");
+  /** P7 will fill historical columns; keep table shape per §2.2. */
+  const dash = "—";
+  sections.push(
+    `| Mileage | ${formatDistanceDm(agg.totalDistanceM, unit)} | ${dash} | ${dash} | ${dash} |`,
+  );
+  sections.push(`| Runs | ${runCount} | ${dash} | ${dash} | ${dash} |`);
+  sections.push(
+    `| Total time | ${formatDuration(agg.totalDurationS)} | ${dash} | ${dash} | ${dash} |`,
+  );
+  sections.push(
+    `| Total elevation | ${formatElevationM(agg.totalElevM, unit)} | ${dash} | ${dash} | ${dash} |`,
+  );
+  sections.push(
+    `| Relative effort | ${agg.totalRe > 0 ? String(Math.round(agg.totalRe)) : "—"} | ${dash} | ${dash} | ${dash} |`,
+  );
+  sections.push(
+    `| Avg easy-run HR | ${easyAvg !== undefined ? String(easyAvg) : "—"} | ${dash} | ${dash} | ${dash} |`,
+  );
+  sections.push("");
+
+  sections.push(...formatWeekZoneSection(hrAnalytics));
+
+  sections.push("## Run-by-run");
+  sections.push("");
+
+  const ordered = sortDetailsByStart(workoutDetails, timeZoneId);
+  const blocks: string[] = [];
+  for (const d of ordered) {
+    const w = parseJsonObject(d.body);
+    if (!w) {
+      blocks.push(`### Run ${d.id}`);
+      blocks.push("");
+      blocks.push("Could not parse workout JSON.");
+      blocks.push("");
+      continue;
+    }
+    const hr = hrRowById(hrAnalytics, d.id);
+    blocks.push(
+      formatRunBlock({
+        workout: w,
+        hr,
+        unit,
+        shoeLookup,
+        timeZoneId,
+      }),
+    );
+    blocks.push("");
+  }
+
+  sections.push(blocks.join("\n").trimEnd());
+  sections.push("");
+
+  return sections.join("\n").trimEnd() + "\n";
+}

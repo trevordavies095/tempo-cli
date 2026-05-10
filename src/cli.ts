@@ -157,6 +157,7 @@ import {
   formatRecapHrAnalyticsHuman,
   recapHrAnalyticsToJson,
 } from "./weekly-recap/hr-analytics.js";
+import { buildWeeklyRecapMarkdownCore } from "./weekly-recap/markdown-report.js";
 import {
   formatRecapZonesSummary,
   parseAndValidateHeartRateZones,
@@ -2152,6 +2153,14 @@ program
     "--write <path>",
     "Write output to this path (- or omit = stdout). Use this for the report file; global --output only selects human vs JSON.",
   )
+  .addOption(
+    new Option(
+      "--format <mode>",
+      'Report payload: "markdown" (weekly recap §2.1–2.4 document) or "json" (structured diagnostics without Markdown)',
+    )
+      .choices(["markdown", "json"])
+      .default("markdown"),
+  )
   .addHelpText(
     "after",
     `
@@ -2161,7 +2170,7 @@ Examples:
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
 
-Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), and GET /shoes. Computes client-side HR analytics (zones, drift, % max HR) from time-series samples. Same API key resolution: --api-key, TEMPO_API_KEY, config. Full Markdown report generation will follow in later releases.
+Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), and GET /shoes. With --format markdown (default), success output is the Markdown weekly recap (§2.1–2.4); use --format json for structured diagnostics only. JSON CLI mode (--output json) includes reportMarkdown when --format markdown. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
 Use --write for the report file path. Global --output is only "human" | "json" for CLI output mode.
 
@@ -2176,6 +2185,7 @@ ${HELP_GLOBALS_HINT}
       week: string;
       timezone?: string;
       write?: string;
+      format: "markdown" | "json";
     };
 
     const tzRaw = merged.timezone?.trim();
@@ -2361,7 +2371,21 @@ ${HELP_GLOBALS_HINT}
       timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
     });
 
-    const humanLines = [
+    const workoutDetailSlice = fetchData.workoutDetails.map((d) => ({
+      id: d.id,
+      body: d.body,
+    }));
+
+    const reportMarkdown = buildWeeklyRecapMarkdownCore({
+      resolved: v,
+      timeZoneId: tz,
+      unit: unitParsed.unit,
+      hrAnalytics,
+      workoutDetails: workoutDetailSlice,
+      shoesBody: fetchData.shoesBody,
+    });
+
+    const diagnosticHumanLines = [
       `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
       `UTC startDate: ${v.utcStartDate}`,
       `UTC endDate: ${v.utcEndDate}`,
@@ -2376,6 +2400,9 @@ ${HELP_GLOBALS_HINT}
       formatRecapHrAnalyticsHuman(hrAnalytics),
     ].join("\n");
 
+    const humanSuccessBody =
+      merged.format === "markdown" ? reportMarkdown : diagnosticHumanLines;
+
     const jsonBody: Record<string, unknown> = {
       ok: true,
       isoWeekId: v.isoWeekId,
@@ -2384,6 +2411,7 @@ ${HELP_GLOBALS_HINT}
       utcEndDate: v.utcEndDate,
       timezone: tz,
       timezoneOffsetMinutes: v.timezoneOffsetMinutes,
+      recapFormat: merged.format,
       settings: {
         unitPreference: unitParsed.unit,
         heartRateZones: {
@@ -2406,18 +2434,22 @@ ${HELP_GLOBALS_HINT}
       hrAnalytics: recapHrAnalyticsToJson(hrAnalytics),
     };
 
+    if (merged.format === "markdown") {
+      jsonBody.reportMarkdown = reportMarkdown;
+    }
+
     const writePath = merged.write?.trim();
     const useStdout = writePath === undefined || writePath === "" || writePath === "-";
 
     if (useStdout) {
-      writeCommandSuccess(merged.output, humanLines, jsonBody);
+      writeCommandSuccess(merged.output, humanSuccessBody, jsonBody);
       return;
     }
 
     const payload =
       merged.output === "json"
         ? `${JSON.stringify(jsonBody)}\n`
-        : `${humanLines}\n`;
+        : `${humanSuccessBody}\n`;
     try {
       await atomicWriteFile(writePath, new TextEncoder().encode(payload));
     } catch (e) {
