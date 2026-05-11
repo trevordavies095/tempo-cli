@@ -13,7 +13,7 @@ import {
 } from "./markdown-report.js";
 import type { RecapUnitPreference } from "./recap-settings.js";
 import type { SubjectiveRunRow, SubjectiveWeekDoc, SubjectiveWeeklyMeta } from "./subjective-week.js";
-import { workoutLocalDate } from "./subjective-week.js";
+import { clampOptionalRating, workoutLocalDate } from "./subjective-week.js";
 
 function parseJsonObject(body: string): Record<string, unknown> | undefined {
   const t = body.trim();
@@ -58,6 +58,13 @@ function parseOptionalRating(line: string): number | undefined {
   const n = Number.parseInt(t, 10);
   if (!Number.isFinite(n) || n < 1 || n > 10) return undefined;
   return n;
+}
+
+/** Read RPE from Tempo workout detail JSON (GET /workouts/{id} body). Exported for tests. */
+export function extractApiRpe(w: Record<string, unknown>): number | undefined {
+  const raw = pickFirst(w, ["rpe", "Rpe", "RPE"]);
+  if (typeof raw !== "number") return undefined;
+  return clampOptionalRating(raw);
 }
 
 function parseOptionalFloat(line: string): number | undefined {
@@ -139,11 +146,18 @@ export async function collectSubjectiveInteractive(args: {
       const header = buildRunTitleLine(w, args.timeZoneId, args.unit);
       args.stdout.write(`${header}\n`);
 
-      const rpeLine = await rl.question("  RPE (1-10) [Enter to skip]: ");
+      const apiRpe = extractApiRpe(w);
+      let rpe: number | undefined;
+      if (apiRpe !== undefined) {
+        args.stdout.write(`  RPE: ${apiRpe}/10 (from Tempo)\n`);
+        rpe = apiRpe;
+      } else {
+        const rpeLine = await rl.question("  RPE (1-10) [Enter to skip]: ");
+        rpe = parseOptionalRating(rpeLine);
+      }
       const feltLine = await rl.question("  Felt (1-10) [Enter to skip]: ");
       const painLine = await rl.question("  Pain/niggles [Enter to skip]: ");
 
-      const rpe = parseOptionalRating(rpeLine);
       const felt = parseOptionalRating(feltLine);
       const pain =
         painLine.trim().length > 0 ? painLine.trim() : undefined;

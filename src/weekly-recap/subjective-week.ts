@@ -45,7 +45,7 @@ export type ParseSubjectiveWeekOk = { ok: true; value: SubjectiveWeekDoc };
 export type ParseSubjectiveWeekErr = { ok: false; message: string };
 export type ParseSubjectiveWeekResult = ParseSubjectiveWeekOk | ParseSubjectiveWeekErr;
 
-function clampOptionalRating(n: number): number | undefined {
+export function clampOptionalRating(n: number): number | undefined {
   if (!Number.isFinite(n)) return undefined;
   const r = Math.round(n);
   if (r < 1 || r > 10) return undefined;
