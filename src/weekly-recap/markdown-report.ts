@@ -238,7 +238,13 @@ function formatWeatherLine(
   }
   const wind = pickFirst(w, ["wind", "Wind", "windSpeed"]);
   if (typeof wind === "string" && wind.trim()) bits.push(wind.trim());
-  else if (typeof wind === "number" && Number.isFinite(wind)) bits.push(`${wind}`);
+  else if (typeof wind === "number" && Number.isFinite(wind)) {
+    if (unit === "imperial") {
+      bits.push(`${(wind * 2.23694).toFixed(1)} mph`);
+    } else {
+      bits.push(`${(wind * 3.6).toFixed(1)} km/h`);
+    }
+  }
   return bits.length > 0 ? bits.join(", ") : undefined;
 }
 
