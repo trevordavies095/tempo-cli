@@ -112,6 +112,7 @@ describe("buildWeeklyRecapMarkdownCore", () => {
     expect(md).toContain("Z1 ");
     expect(md).toContain("## Run-by-run");
     expect(md).toContain("Easy Run");
+    expect(md).toContain("Cad 320 spm");
     expect(md).toContain("Splits:");
     expect(md).toContain("Similar route: n/a");
     expect(md).toContain("Notes (from app):");

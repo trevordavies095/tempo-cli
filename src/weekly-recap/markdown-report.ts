@@ -460,6 +460,11 @@ export function formatWeekZoneSection(a: RecapHrAnalyticsResult): string[] {
   return lines;
 }
 
+/** API avgCadenceRpm is one-foot RPM; recap copy uses steps per minute (both feet). */
+function cadenceRpmToSpm(rpm: number): number {
+  return Math.round(rpm * 2);
+}
+
 function formatRunBlock(args: {
   workout: Record<string, unknown>;
   hr: RecapHrRunRow | undefined;
@@ -521,7 +526,7 @@ function formatRunBlock(args: {
   }
   const cad = pickFirst(workout, ["avgCadenceRpm", "AvgCadenceRpm"]);
   if (typeof cad === "number" && Number.isFinite(cad)) {
-    paceBits.push(`Cad ${Math.round(cad)} spm`);
+    paceBits.push(`Cad ${cadenceRpmToSpm(cad)} spm`);
   }
   if (paceBits.length > 0) {
     lines.push(`${paceBits.join("  ·  ")}`);
