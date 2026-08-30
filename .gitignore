@@ -8,3 +8,4 @@ dist/
 .mcpb-staging/
 artifacts/
 *.mcpb
+.DS_Store
