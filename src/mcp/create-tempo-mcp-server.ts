@@ -7,6 +7,12 @@ import {
   generateWeeklyRecapToolResult,
 } from "./generate-weekly-recap.js";
 import {
+  SAVE_PRESCRIBED_WEEK_TOOL_DESCRIPTION,
+  SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+  savePrescribedWeekInputShape,
+  savePrescribedWeekToolResult,
+} from "./save-prescribed-week.js";
+import {
   SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
   SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
   saveSubjectiveResponsesInputShape,
@@ -101,6 +107,28 @@ export function createTempoMcpServer(config: TempoMcpServerConfig): McpServer {
           timezone: args.timezone,
           runs: args.runs,
           weekly: args.weekly,
+        },
+      ),
+  );
+
+  server.registerTool(
+    SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+    {
+      title: "Save prescribed week",
+      description: SAVE_PRESCRIBED_WEEK_TOOL_DESCRIPTION,
+      inputSchema: savePrescribedWeekInputShape,
+    },
+    async (args) =>
+      savePrescribedWeekToolResult(
+        {
+          prescribedDir: config.prescribedDir,
+          timezone: config.timezone,
+        },
+        {
+          week: args.week,
+          overwrite: args.overwrite,
+          timezone: args.timezone,
+          sessions: args.sessions,
         },
       ),
   );

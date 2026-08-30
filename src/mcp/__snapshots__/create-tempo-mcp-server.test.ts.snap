@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`createTempoMcpServer (protocol) > tools/list returns three tools with stable schema snapshot 1`] = `
+exports[`createTempoMcpServer (protocol) > tools/list returns four tools with stable schema snapshot 1`] = `
 [
   {
     "description": "Probe the configured Tempo instance: GET /health (no auth), then GET /auth/me with the configured API key. Reports whether the instance is reachable and whether the key authenticates. Use this when setup fails or before generating a weekly recap.",
@@ -142,6 +142,134 @@ exports[`createTempoMcpServer (protocol) > tools/list returns three tools with s
       "type": "object",
     },
     "name": "save_subjective_responses",
+  },
+  {
+    "description": "Validate and write prescribed-{week}.yaml for a Tempo weekly recap (same schema the CLI reads for quality-vs-prescribed). Call after coaching to persist next week's plan. Requires an explicit ISO week (YYYY-Www); set overwrite: true to replace an existing file. Does not call the Tempo API.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "overwrite": {
+          "description": "When true, replace an existing prescribed file for this week. Default false — refuse if the file already exists.",
+          "type": "boolean",
+        },
+        "sessions": {
+          "description": "Prescribed sessions: type workout (pace/HR/reps) or long_run (distance + HR max)",
+          "items": {
+            "oneOf": [
+              {
+                "properties": {
+                  "date": {
+                    "description": "Local calendar date YYYY-MM-DD (must fall in the week Mon–Sun)",
+                    "type": "string",
+                  },
+                  "description": {
+                    "type": "string",
+                  },
+                  "rep_distance_mi": {
+                    "description": "Positive distance per rep in miles",
+                    "type": "number",
+                  },
+                  "reps": {
+                    "description": "Positive rep count",
+                    "type": "number",
+                  },
+                  "target_hr_bpm": {
+                    "properties": {
+                      "max": {
+                        "description": "HR max bpm",
+                        "type": "number",
+                      },
+                      "min": {
+                        "description": "HR min bpm",
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "min",
+                      "max",
+                    ],
+                    "type": "object",
+                  },
+                  "target_pace_per_mi": {
+                    "properties": {
+                      "max": {
+                        "description": "Pace max as M:SS (e.g. "8:30")",
+                        "type": "string",
+                      },
+                      "min": {
+                        "description": "Pace min as M:SS (e.g. "8:15")",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "min",
+                      "max",
+                    ],
+                    "type": "object",
+                  },
+                  "type": {
+                    "const": "workout",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "type",
+                  "date",
+                  "target_pace_per_mi",
+                  "target_hr_bpm",
+                  "reps",
+                  "rep_distance_mi",
+                ],
+                "type": "object",
+              },
+              {
+                "properties": {
+                  "date": {
+                    "description": "Local calendar date YYYY-MM-DD (must fall in the week Mon–Sun)",
+                    "type": "string",
+                  },
+                  "description": {
+                    "type": "string",
+                  },
+                  "target_distance_mi": {
+                    "type": "number",
+                  },
+                  "target_hr_bpm_max": {
+                    "type": "number",
+                  },
+                  "type": {
+                    "const": "long_run",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "type",
+                  "date",
+                  "target_distance_mi",
+                  "target_hr_bpm_max",
+                ],
+                "type": "object",
+              },
+            ],
+          },
+          "type": "array",
+        },
+        "timezone": {
+          "description": "IANA timezone used to validate session dates fall in Mon–Sun (default: config or system)",
+          "type": "string",
+        },
+        "week": {
+          "description": "ISO week id for the file, e.g. "2026-W35" (required; no smart default)",
+          "type": "string",
+        },
+      },
+      "required": [
+        "week",
+        "sessions",
+      ],
+      "type": "object",
+    },
+    "name": "save_prescribed_week",
   },
 ]
 `;

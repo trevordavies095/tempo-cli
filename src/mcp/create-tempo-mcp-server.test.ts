@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,10 @@ import {
   GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION,
   GENERATE_WEEKLY_RECAP_TOOL_NAME,
 } from "./generate-weekly-recap.js";
+import {
+  SAVE_PRESCRIBED_WEEK_TOOL_DESCRIPTION,
+  SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+} from "./save-prescribed-week.js";
 import {
   SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
   SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
@@ -115,6 +119,7 @@ async function connectPair(config: {
   baseUrl: string;
   apiKey?: string;
   subjectiveDir?: string;
+  prescribedDir?: string;
   cacheDir?: string;
   timezone?: string;
 }): Promise<{ client: Client; close: () => Promise<void> }> {
@@ -153,14 +158,14 @@ describe("createTempoMcpServer (protocol)", () => {
     vi.restoreAllMocks();
   });
 
-  it("tools/list returns three tools with stable schema snapshot", async () => {
+  it("tools/list returns four tools with stable schema snapshot", async () => {
     const { client, close } = await connectPair({
       baseUrl: BASE,
       apiKey: SECRET_KEY,
     });
     try {
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(3);
+      expect(listed.tools).toHaveLength(4);
       const byName = Object.fromEntries(
         listed.tools.map((t) => [t.name, t]),
       );
@@ -172,6 +177,9 @@ describe("createTempoMcpServer (protocol)", () => {
       );
       expect(byName[SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME]?.description).toBe(
         SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
+      );
+      expect(byName[SAVE_PRESCRIBED_WEEK_TOOL_NAME]?.description).toBe(
+        SAVE_PRESCRIBED_WEEK_TOOL_DESCRIPTION,
       );
       expect(
         listed.tools.map((t) => ({
@@ -393,6 +401,155 @@ describe("createTempoMcpServer (protocol)", () => {
       expect(report.subjective).toBe("present");
       expect(report.reportMarkdown).toContain("Weekly Recap");
       expect(report.reportMarkdown).toMatch(/Subjective|Felt: 8|RPE: 4|Questions for coach/i);
+    } finally {
+      await close();
+    }
+  });
+
+  it("save_prescribed_week: refuses overwrite without flag; replaces with overwrite", async () => {
+    const fetchSpy = vi.fn() as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    const root = await mkdtemp(join(tmpdir(), "tempo-mcp-presc-ow-"));
+    const prescribedDir = join(root, "prescribed");
+    await mkdir(prescribedDir, { recursive: true });
+    const path = join(prescribedDir, "prescribed-2026-W19.yaml");
+    await writeFile(path, "week: 2026-W19\nsessions: []\n", "utf8");
+
+    const { client, close } = await connectPair({
+      baseUrl: BASE,
+      apiKey: SECRET_KEY,
+      prescribedDir,
+      timezone: "America/New_York",
+    });
+    try {
+      const refused = await client.callTool({
+        name: SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          sessions: [
+            {
+              type: "workout",
+              date: "2026-05-09",
+              target_pace_per_mi: { min: "8:15", max: "8:30" },
+              target_hr_bpm: { min: 175, max: 184 },
+              reps: 2,
+              rep_distance_mi: 1,
+            },
+          ],
+        },
+      });
+      expect(refused.isError).toBe(true);
+      expect(toolText(refused)).toMatch(/already exists/i);
+      expect(toolText(refused)).toContain("2026-W19");
+      expect(await readFile(path, "utf8")).toContain("sessions: []");
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      const replaced = await client.callTool({
+        name: SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          overwrite: true,
+          timezone: "America/New_York",
+          sessions: [
+            {
+              type: "workout",
+              date: "2026-05-09",
+              target_pace_per_mi: { min: "8:15", max: "8:30" },
+              target_hr_bpm: { min: 175, max: 184 },
+              reps: 2,
+              rep_distance_mi: 1,
+            },
+          ],
+        },
+      });
+      expect(replaced.isError).toBeFalsy();
+      const saved = JSON.parse(toolText(replaced)) as {
+        ok: boolean;
+        path: string;
+        week: string;
+      };
+      expect(saved.ok).toBe(true);
+      expect(saved.week).toBe("2026-W19");
+      expect(await readFile(saved.path, "utf8")).toContain("type: workout");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      await close();
+    }
+  });
+
+  it("save_prescribed_week → generate_weekly_recap grades Quality section", async () => {
+    mockHappyPathProbes([
+      {
+        id: "w1",
+        status: 200,
+        body: JSON.stringify({
+          id: "w1",
+          startedAt: "2026-05-09T12:00:00.000Z",
+          runType: "Workout",
+          avgHeartRateBpm: 180,
+        }),
+      },
+    ]);
+    const fetchSpy = vi.fn() as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    const root = await mkdtemp(join(tmpdir(), "tempo-mcp-presc-grade-"));
+    const prescribedDir = join(root, "prescribed");
+    const subjectiveDir = join(root, "subjective");
+    const cacheDir = join(root, "cache");
+    await mkdir(prescribedDir, { recursive: true });
+    await mkdir(subjectiveDir, { recursive: true });
+    await mkdir(cacheDir, { recursive: true });
+
+    const { client, close } = await connectPair({
+      baseUrl: BASE,
+      apiKey: SECRET_KEY,
+      prescribedDir,
+      subjectiveDir,
+      cacheDir,
+      timezone: "America/New_York",
+    });
+    try {
+      const saveResult = await client.callTool({
+        name: SAVE_PRESCRIBED_WEEK_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          sessions: [
+            {
+              type: "workout",
+              date: "2026-05-09",
+              target_pace_per_mi: { min: "8:15", max: "8:30" },
+              target_hr_bpm: { min: 175, max: 184 },
+              reps: 2,
+              rep_distance_mi: 1,
+            },
+          ],
+        },
+      });
+      expect(saveResult.isError).toBeFalsy();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      const reportResult = await client.callTool({
+        name: GENERATE_WEEKLY_RECAP_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          skip_subjective: true,
+          include_trends: false,
+        },
+      });
+      expect(reportResult.isError).toBeFalsy();
+      const envelope = JSON.parse(toolText(reportResult)) as {
+        status: string;
+        prescribed: boolean;
+        reportMarkdown: string;
+      };
+      expect(envelope.status).toBe("report");
+      expect(envelope.prescribed).toBe(true);
+      expect(envelope.reportMarkdown).toMatch(/Quality session/i);
     } finally {
       await close();
     }

@@ -46,6 +46,7 @@ Restart Claude Desktop after editing the config. Demo flows:
 - “Check my Tempo connection” → `check_connection`.
 - “Run my weekly recap” → `generate_weekly_recap` returns `needs_subjective` when no subjective YAML exists; the host interviews you, calls `save_subjective_responses`, then `generate_weekly_recap` again for the full markdown report.
 - “Run my weekly recap, skip the questions” → `generate_weekly_recap` with `skip_subjective: true`.
+- “Save that plan for next week” → `save_prescribed_week` with an explicit ISO week and sessions; set `overwrite: true` only when replacing an existing prescribed file.
 
 ## Tools (current)
 
@@ -54,6 +55,7 @@ Restart Claude Desktop after editing the config. Demo flows:
 | `check_connection` | `GET /health` (no auth), then `GET /auth/me` with the configured key. Reports reachable + authenticated, reachable but key rejected, unreachable/transport failure, or missing key after a healthy probe. |
 | `generate_weekly_recap` | Same weekly-recap engine as `tempo weekly-recap` (`format` markdown). Args: optional `week`, `timezone`, `include_trends`, `skip_subjective`, `refresh_subjective`. **Gate (server-enforced):** when subjective YAML is missing (or `refresh_subjective` is true) and `skip_subjective` is false, returns JSON with `status: "needs_subjective"` — compact week runs (date, type, distance, `apiRpe`; no workout bodies) plus a questionnaire schema — instead of a report. Otherwise returns `status: "report"` with `reportMarkdown` and metadata (`week`, `timezone`, `subjective`, `prescribed`, `trends`, `warnings`). Timezone / `[report]` dirs / trends default come from `config.toml` when args omit them. |
 | `save_subjective_responses` | Validates interview answers and writes `subjective-{week}.yaml` (CLI-compatible schema, same path resolution as the interactive CLI). Args: required `week`, `runs[]`, optional `weekly`, optional `timezone`. No Tempo HTTP calls. After a successful save, call `generate_weekly_recap` again for the complete report. |
+| `save_prescribed_week` | Validates a coach plan and writes `prescribed-{week}.yaml` (same schema the recap engine reads for quality-vs-prescribed). Args: required `week` (ISO `YYYY-Www`, no smart default), required `sessions[]` (`workout` or `long_run`), optional `timezone`, optional `overwrite` (default false — refuse if the file already exists). No Tempo HTTP calls. |
 
 New tools should live under [`src/mcp/`](../../src/mcp/), register in [`create-tempo-mcp-server.ts`](../../src/mcp/create-tempo-mcp-server.ts), and extend the protocol tests in [`create-tempo-mcp-server.test.ts`](../../src/mcp/create-tempo-mcp-server.test.ts) (in-memory MCP client + mocked probes/`fetch`). Keep API-key redaction consistent with [`auth-me.ts`](../../src/commands/auth-me.ts).
 
