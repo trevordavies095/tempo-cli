@@ -1,15 +1,96 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as authMe from "../commands/auth-me.js";
+import * as settingsHr from "../commands/settings-heart-rate-zones.js";
+import * as settingsUnit from "../commands/settings-unit-preference.js";
+import * as statsBestEfforts from "../commands/stats-best-efforts.js";
+import * as statsRelativeEffort from "../commands/stats-relative-effort.js";
+import * as statsWeeklyRecap from "../commands/stats-weekly-recap.js";
+import * as statsYearlyWeekly from "../commands/stats-yearly-weekly.js";
+import * as fetchWorkouts from "../weekly-recap/fetch-workouts.js";
 import {
   CHECK_CONNECTION_TOOL_DESCRIPTION,
   CHECK_CONNECTION_TOOL_NAME,
   createTempoMcpServer,
 } from "./create-tempo-mcp-server.js";
+import {
+  GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION,
+  GENERATE_WEEKLY_RECAP_TOOL_NAME,
+} from "./generate-weekly-recap.js";
 
 const originalFetch = globalThis.fetch;
 const SECRET_KEY = "tmp_protocol_secret_key";
 const BASE = "http://localhost:5001";
+
+const fiveZones = [
+  { zone: 1, minBpm: 100, maxBpm: 120 },
+  { zone: 2, minBpm: 121, maxBpm: 140 },
+  { zone: 3, minBpm: 141, maxBpm: 160 },
+  { zone: 4, minBpm: 161, maxBpm: 175 },
+  { zone: 5, minBpm: 176, maxBpm: 195 },
+];
+
+function zonesBody(): string {
+  return JSON.stringify({
+    calculationMethod: "AgeBased",
+    age: 40,
+    zones: fiveZones,
+  });
+}
+
+function mockHappyPathProbes() {
+  vi.spyOn(authMe, "probeAuthMe").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify({ id: "u1", name: "Ada" }),
+  });
+  vi.spyOn(settingsHr, "probeSettingsHeartRateZones").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: zonesBody(),
+  });
+  vi.spyOn(settingsUnit, "probeSettingsUnitPreference").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify({ unit: "imperial" }),
+  });
+  vi.spyOn(fetchWorkouts, "fetchRecapWorkoutData").mockResolvedValue({
+    ok: true,
+    listItemCount: 0,
+    workoutIds: [],
+    workoutDetails: [],
+    timeSeriesByWorkoutId: {},
+    shoesStatus: 200,
+    shoesBody: "[]",
+    similarRoutesByWorkoutId: {},
+  });
+  vi.spyOn(fetchWorkouts, "fetchTrendWorkoutListItems").mockResolvedValue({
+    ok: true,
+    items: [],
+  });
+  vi.spyOn(statsWeeklyRecap, "probeStatsWeeklyRecap").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify({}),
+  });
+  vi.spyOn(statsRelativeEffort, "probeStatsRelativeEffort").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify({}),
+  });
+  vi.spyOn(statsBestEfforts, "probeStatsBestEfforts").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify({}),
+  });
+  vi.spyOn(statsYearlyWeekly, "probeStatsYearlyWeekly").mockResolvedValue({
+    kind: "ok",
+    status: 200,
+    body: JSON.stringify([]),
+  });
+}
 
 function connRefused(): TypeError {
   const err = new TypeError("fetch failed");
@@ -22,11 +103,14 @@ function connRefused(): TypeError {
 async function connectPair(config: {
   baseUrl: string;
   apiKey?: string;
+  subjectiveDir?: string;
+  cacheDir?: string;
 }): Promise<{ client: Client; close: () => Promise<void> }> {
   const server = createTempoMcpServer({
     ...config,
     name: "tempo-cli-test",
     version: "0.0.0-test",
+    includeTrendsDefault: false,
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -49,23 +133,30 @@ describe("createTempoMcpServer (protocol)", () => {
     vi.restoreAllMocks();
   });
 
-  it("tools/list returns exactly check_connection with stable schema snapshot", async () => {
+  it("tools/list returns check_connection and generate_weekly_recap with stable schema snapshot", async () => {
     const { client, close } = await connectPair({
       baseUrl: BASE,
       apiKey: SECRET_KEY,
     });
     try {
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(1);
-      expect(listed.tools[0]?.name).toBe(CHECK_CONNECTION_TOOL_NAME);
-      expect(listed.tools[0]?.description).toBe(
+      expect(listed.tools).toHaveLength(2);
+      const byName = Object.fromEntries(
+        listed.tools.map((t) => [t.name, t]),
+      );
+      expect(byName[CHECK_CONNECTION_TOOL_NAME]?.description).toBe(
         CHECK_CONNECTION_TOOL_DESCRIPTION,
       );
-      expect({
-        name: listed.tools[0]?.name,
-        description: listed.tools[0]?.description,
-        inputSchema: listed.tools[0]?.inputSchema,
-      }).toMatchSnapshot();
+      expect(byName[GENERATE_WEEKLY_RECAP_TOOL_NAME]?.description).toBe(
+        GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION,
+      );
+      expect(
+        listed.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+      ).toMatchSnapshot();
     } finally {
       await close();
     }
@@ -146,6 +237,52 @@ describe("createTempoMcpServer (protocol)", () => {
         .join("\n");
       expect(text).toMatch(/Unreachable/);
       expect(text).not.toContain(SECRET_KEY);
+    } finally {
+      await close();
+    }
+  });
+
+  it("generate_weekly_recap: skip_subjective returns markdown envelope", async () => {
+    mockHappyPathProbes();
+    const { mkdir, mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = await mkdtemp(join(tmpdir(), "tempo-mcp-proto-"));
+    const subjectiveDir = join(root, "subjective");
+    const cacheDir = join(root, "cache");
+    await mkdir(subjectiveDir, { recursive: true });
+    await mkdir(cacheDir, { recursive: true });
+
+    const { client, close } = await connectPair({
+      baseUrl: BASE,
+      apiKey: SECRET_KEY,
+      subjectiveDir,
+      cacheDir,
+    });
+    try {
+      const result = await client.callTool({
+        name: GENERATE_WEEKLY_RECAP_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          skip_subjective: true,
+          include_trends: false,
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      const text = (result.content as { type: string; text: string }[])
+        .map((c) => c.text)
+        .join("\n");
+      expect(text).not.toContain(SECRET_KEY);
+      const envelope = JSON.parse(text) as {
+        week: string;
+        subjective: string;
+        reportMarkdown: string;
+      };
+      expect(envelope.week).toBe("2026-W19");
+      expect(envelope.subjective).toBe("skipped");
+      expect(envelope.reportMarkdown).toContain("Weekly Recap");
+      expect(envelope.reportMarkdown).toContain("No runs recorded this week.");
     } finally {
       await close();
     }

@@ -41,15 +41,16 @@ After a local build, add a server entry to Claude Desktop’s MCP config (path v
 
 If `base_url` / `api_key` already live in `~/.config/tempo/config.toml` (or the Windows equivalent), you can omit the `env` block. Prefer env or the OS keychain for keys; do not commit real keys into the JSON file.
 
-Restart Claude Desktop after editing the config. In a chat, ask “check my Tempo connection” — the host should call `check_connection`.
+Restart Claude Desktop after editing the config. In a chat, ask “check my Tempo connection” — the host should call `check_connection`. For a recap without the subjective questionnaire: “run my weekly recap, skip the questions” → `generate_weekly_recap` with `skip_subjective: true`.
 
 ## Tools (current)
 
 | Tool | Behavior |
 |------|----------|
 | `check_connection` | `GET /health` (no auth), then `GET /auth/me` with the configured key. Reports reachable + authenticated, reachable but key rejected, unreachable/transport failure, or missing key after a healthy probe. |
+| `generate_weekly_recap` | Runs the same weekly-recap engine as `tempo weekly-recap` (`format` markdown). Args: optional `week`, `timezone`, `include_trends`, `skip_subjective`. Returns JSON text with `reportMarkdown` plus metadata (`week`, `timezone`, `subjective`, `prescribed`, `trends`, `warnings`). Timezone / `[report]` dirs / trends default come from `config.toml` when args omit them. When subjective YAML is missing and `skip_subjective` is false, still returns a report with a warning (interactive gate is a later tool). |
 
-New tools should live under [`src/mcp/`](../../src/mcp/), register in [`create-tempo-mcp-server.ts`](../../src/mcp/create-tempo-mcp-server.ts), and extend the protocol tests in [`create-tempo-mcp-server.test.ts`](../../src/mcp/create-tempo-mcp-server.test.ts) (in-memory MCP client + mocked `fetch`). Keep API-key redaction consistent with [`auth-me.ts`](../../src/commands/auth-me.ts).
+New tools should live under [`src/mcp/`](../../src/mcp/), register in [`create-tempo-mcp-server.ts`](../../src/mcp/create-tempo-mcp-server.ts), and extend the protocol tests in [`create-tempo-mcp-server.test.ts`](../../src/mcp/create-tempo-mcp-server.test.ts) (in-memory MCP client + mocked probes/`fetch`). Keep API-key redaction consistent with [`auth-me.ts`](../../src/commands/auth-me.ts).
 
 ## Stream discipline
 

@@ -7,6 +7,11 @@ export type RunStdioMcpServerOptions = {
   apiKey?: string;
   name?: string;
   version?: string;
+  timezone?: string;
+  includeTrendsDefault?: boolean;
+  prescribedDir?: string;
+  subjectiveDir?: string;
+  cacheDir?: string;
 };
 
 /**
@@ -21,6 +26,11 @@ export async function runStdioMcpServer(
     apiKey: options.apiKey,
     name: options.name,
     version: options.version,
+    timezone: options.timezone,
+    includeTrendsDefault: options.includeTrendsDefault,
+    prescribedDir: options.prescribedDir,
+    subjectiveDir: options.subjectiveDir,
+    cacheDir: options.cacheDir,
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);

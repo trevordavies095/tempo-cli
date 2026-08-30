@@ -1,12 +1,40 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`createTempoMcpServer (protocol) > tools/list returns exactly check_connection with stable schema snapshot 1`] = `
-{
-  "description": "Probe the configured Tempo instance: GET /health (no auth), then GET /auth/me with the configured API key. Reports whether the instance is reachable and whether the key authenticates. Use this when setup fails or before generating a weekly recap.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object",
+exports[`createTempoMcpServer (protocol) > tools/list returns check_connection and generate_weekly_recap with stable schema snapshot 1`] = `
+[
+  {
+    "description": "Probe the configured Tempo instance: GET /health (no auth), then GET /auth/me with the configured API key. Reports whether the instance is reachable and whether the key authenticates. Use this when setup fails or before generating a weekly recap.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object",
+    },
+    "name": "check_connection",
   },
-  "name": "check_connection",
-}
+  {
+    "description": "Generate the Tempo weekly recap markdown report for a Mon–Sun week (same engine as \`tempo weekly-recap\`). Optional week (last|current|YYYY-Www|YYYY-MM-DD; omit for smart default), timezone, include_trends, and skip_subjective. When subjective YAML is missing and skip_subjective is false, still returns the report with a warning (interactive gate comes later). Prefer skip_subjective: true for a quick check-in. Result is JSON text with reportMarkdown plus metadata.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "include_trends": {
+          "description": "Include rolling trends section (extra workouts fetch). Default from config [report].include_trends or true.",
+          "type": "boolean",
+        },
+        "skip_subjective": {
+          "description": "Skip subjective YAML and omit subjective sections. Default false; when false and no file exists, report still generates with a warning.",
+          "type": "boolean",
+        },
+        "timezone": {
+          "description": "IANA timezone for Mon–Sun boundaries (default: config timezone or system)",
+          "type": "string",
+        },
+        "week": {
+          "description": "Which week: omit for smart default (Sat–Sun → current, Mon → last completed, Tue–Fri → current), or "last", "current", YYYY-Www, or YYYY-MM-DD",
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "name": "generate_weekly_recap",
+  },
+]
 `;

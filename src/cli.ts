@@ -2570,7 +2570,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("mcp")
   .description(
-    "Start a stdio MCP server for Claude Desktop (and other MCP clients). Exposes check_connection; uses the same base URL and API key resolution as other commands. Stdout is JSON-RPC only — do not pipe CLI success output through this process.",
+    "Start a stdio MCP server for Claude Desktop (and other MCP clients). Exposes check_connection and generate_weekly_recap; uses the same base URL, API key, timezone, and [report] path resolution as other commands. Stdout is JSON-RPC only — do not pipe CLI success output through this process.",
   )
   .addHelpText(
     "after",
@@ -2602,9 +2602,13 @@ ${HELP_GLOBALS_HINT}
       apiKey: key,
       name: pkg.name ?? "tempo-cli",
       version: typeof pkg.version === "string" ? pkg.version : "0.0.0",
+      timezone: fileLayer.timezone,
+      includeTrendsDefault: fileLayer.report?.includeTrends,
+      prescribedDir: fileLayer.report?.prescribedDir,
+      subjectiveDir: fileLayer.report?.subjectiveDir,
+      cacheDir: fileLayer.report?.cacheDir,
     });
   });
-
 program
   .command("version")
   .description(
