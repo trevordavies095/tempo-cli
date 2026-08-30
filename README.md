@@ -35,6 +35,41 @@ Optional: run **`npm link`** from the repository root after a build to put **`te
 
 For watch mode, tests, typechecking, and contributor-focused runtime behavior, see **[Development](#development)** below.
 
+## Claude Desktop (MCP)
+
+Run weekly recaps (and related coaching tools) from [Claude Desktop](https://claude.ai/download) without copy-pasting from a terminal. The CLI ships a local **stdio MCP server** (`tempo mcp`) that talks to your self-hosted Tempo instance using the same config as the rest of the CLI.
+
+### One-click install (`.mcpb`)
+
+1. Download **`tempo-cli.mcpb`** from the repository’s [GitHub Releases](https://github.com/trevordavies095/tempo-cli/releases) (attached by CI when a release is published).
+2. Double-click the file, or drag it into Claude Desktop, or use **Settings → Extensions → Advanced settings → Install Extension…**.
+3. Optionally enter your Tempo **base URL** and **API key** in the install dialog. Both fields are optional:
+   - Leave them blank if `config.toml` (or existing `TEMPO_*` env) already has values.
+   - If you enter a key, Claude Desktop stores it in the **OS keychain** and injects it as `TEMPO_API_KEY` (same precedence as the CLI: environment overrides the config file).
+
+Claude Desktop supplies its own Node runtime for the bundle—no separate Node install is required for this path.
+
+### Manual install (local build)
+
+After `npm install` and `npm run build`, wire Claude Desktop to `node /absolute/path/to/tempo-cli/dist/cli.js mcp`. Full JSON example and contributor notes: [MCP server (contributor reference)](docs/contributing/mcp-dev.md).
+
+### Tools
+
+| Tool | What it does |
+|------|----------------|
+| `check_connection` | Probes `GET /health` then `GET /auth/me` — use this first when setup fails. |
+| `generate_weekly_recap` | Same engine as `tempo weekly-recap`; returns markdown (or a `needs_subjective` questionnaire when subjective YAML is missing). |
+| `save_subjective_responses` | Writes `subjective-{week}.yaml` (CLI-compatible) after the interview. |
+| `save_prescribed_week` | Writes `prescribed-{week}.yaml` so next week’s recap can grade quality vs plan. |
+
+Typical flow: ask Claude to run your weekly recap → if needed, answer the subjective interview in chat → Claude saves YAML and regenerates the report → after coaching, ask it to save next week’s prescribed plan.
+
+### MCP security
+
+- Install-dialog API keys are stored in the OS keychain (`sensitive` field in the MCPB manifest); tool errors **redact** configured keys.
+- Tempo HTTP access from these tools stays **read-only (GET)**. The only writes are two local YAML types under your `[report]` directories (`subjective-*.yaml`, `prescribed-*.yaml`).
+- Do not commit real keys into Desktop config JSON or screenshots.
+
 ## Command naming
 
 - **`tempo workouts list`** — list or filter workouts (plural **`workouts`** for the collection).

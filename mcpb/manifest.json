@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "tempo-cli",
+  "display_name": "Tempo",
+  "version": "0.0.0",
+  "description": "Run Tempo weekly recaps and coaching tools from Claude Desktop against your self-hosted Tempo instance.",
+  "long_description": "Connects Claude Desktop to your self-hosted Tempo running tracker via the local tempo-cli MCP server. Generate weekly recap markdown reports, collect subjective interview answers as YAML, and save prescribed weekly plans — without copy-pasting from a terminal.\n\nUses the same configuration as the tempo CLI (`config.toml` and `TEMPO_*` environment variables). Leave the install dialog fields blank if you already have a config file.",
+  "author": {
+    "name": "trevordavies095",
+    "url": "https://github.com/trevordavies095/tempo-cli"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trevordavies095/tempo-cli.git"
+  },
+  "homepage": "https://github.com/trevordavies095/tempo-cli",
+  "documentation": "https://github.com/trevordavies095/tempo-cli#claude-desktop-mcp",
+  "license": "UNLICENSED",
+  "keywords": ["tempo", "running", "weekly-recap", "fitness"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/cli.js", "mcp"],
+      "env": {
+        "TEMPO_BASE_URL": "${user_config.base_url}",
+        "TEMPO_API_KEY": "${user_config.api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "base_url": {
+      "type": "string",
+      "title": "Tempo base URL",
+      "description": "Your Tempo instance URL (e.g. http://localhost:5001 or https://tempo.example.com). Leave blank to use config.toml or TEMPO_BASE_URL.",
+      "required": false
+    },
+    "api_key": {
+      "type": "string",
+      "title": "Tempo API key",
+      "description": "API key issued in Tempo (tmp_…). Stored in the OS keychain. Leave blank to use config.toml or TEMPO_API_KEY.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "check_connection",
+      "description": "Probe Tempo health and API-key auth."
+    },
+    {
+      "name": "generate_weekly_recap",
+      "description": "Generate the weekly recap markdown report (or needs_subjective questionnaire)."
+    },
+    {
+      "name": "save_subjective_responses",
+      "description": "Write subjective-{week}.yaml after the interview."
+    },
+    {
+      "name": "save_prescribed_week",
+      "description": "Write prescribed-{week}.yaml for next week's plan."
+    }
+  ],
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20"
+    }
+  }
+}

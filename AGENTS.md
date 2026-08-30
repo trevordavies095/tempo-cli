@@ -34,15 +34,31 @@ npx tempo --output json server version
 # Health check (reachability; does not send an API key)
 npx tempo health
 npx tempo --output json health
+
+# Local MCP server for Claude Desktop (JSON-RPC on stdout only)
+npx tempo mcp
+TEMPO_BASE_URL=http://localhost:5001 TEMPO_API_KEY=tmp_... npx tempo mcp
 ```
 
 **Note:** `tempo version` prints the **local** npm package version. Use **`tempo server version`** for the running server’s `/version` response.
+
+### Claude Desktop / MCP tools
+
+End users can install the **`.mcpb`** bundle from GitHub Releases (see [README — Claude Desktop (MCP)](README.md#claude-desktop-mcp)). Contributors: [docs/contributing/mcp-dev.md](docs/contributing/mcp-dev.md).
+
+| Tool | Use when |
+|------|----------|
+| `check_connection` | Verify base URL / API key before a recap |
+| `generate_weekly_recap` | Produce the weekly markdown report (or `needs_subjective` gate) |
+| `save_subjective_responses` | Persist interview answers as `subjective-{week}.yaml` |
+| `save_prescribed_week` | Persist a coach plan as `prescribed-{week}.yaml` |
 
 ## Security
 
 - Do **not** commit API keys or paste them into public logs, tickets, or screenshots.
 - The CLI does not log or echo configured keys; treat command lines and CI logs as sensitive if they include `--api-key` or env exports.
 - If a key is exposed, **rotate or revoke it in Tempo** and issue a new one.
+- MCP: install-dialog keys go to the OS keychain; Tempo API use from MCP tools is GET-only; writes are limited to local subjective/prescribed YAML under `[report]` dirs.
 
 ## Help
 

@@ -11,7 +11,8 @@
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pack:mcpb": "node scripts/pack-mcpb.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -30,6 +31,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@types/luxon": "^3.7.1",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.3",
