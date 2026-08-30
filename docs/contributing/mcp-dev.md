@@ -24,14 +24,14 @@ Startup may print a one-line status on **stderr**. Do not write CLI success enve
 
 ## Claude Desktop (manual config)
 
-After a local build, add a server entry to Claude Desktop’s MCP config (path varies by OS; typically `claude_desktop_config.json`). Replace the path with your checkout’s absolute `dist/cli.js`:
+After a local build, add a server entry to Claude Desktop’s MCP config (path varies by OS; typically `claude_desktop_config.json`). Prefer the dedicated MCP entry (`dist/mcp/main.js`) — the same module the `.mcpb` bundle uses. The `tempo mcp` subcommand also works for manual wiring:
 
 ```json
 {
   "mcpServers": {
     "tempo": {
       "command": "node",
-      "args": ["/absolute/path/to/tempo-cli/dist/cli.js", "mcp"],
+      "args": ["/absolute/path/to/tempo-cli/dist/mcp/main.js"],
       "env": {
         "TEMPO_BASE_URL": "http://localhost:5001",
         "TEMPO_API_KEY": "tmp_..."
@@ -40,6 +40,8 @@ After a local build, add a server entry to Claude Desktop’s MCP config (path v
   }
 }
 ```
+
+Equivalent via the CLI subcommand: `args: ["/absolute/path/to/tempo-cli/dist/cli.js", "mcp"]`.
 
 If `base_url` / `api_key` already live in `~/.config/tempo/config.toml` (or the Windows equivalent), you can omit the `env` block. Prefer env or the OS keychain for keys; do not commit real keys into the JSON file.
 

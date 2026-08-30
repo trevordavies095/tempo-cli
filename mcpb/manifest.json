@@ -20,10 +20,10 @@
   "keywords": ["tempo", "running", "weekly-recap", "fitness"],
   "server": {
     "type": "node",
-    "entry_point": "dist/cli.js",
+    "entry_point": "dist/mcp/main.js",
     "mcp_config": {
       "command": "node",
-      "args": ["mcp"],
+      "args": ["${__dirname}/dist/mcp/main.js"],
       "env": {
         "TEMPO_BASE_URL": "${user_config.base_url}",
         "TEMPO_API_KEY": "${user_config.api_key}"

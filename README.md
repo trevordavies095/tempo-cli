@@ -51,7 +51,7 @@ Claude Desktop supplies its own Node runtime for the bundle—no separate Node i
 
 ### Manual install (local build)
 
-After `npm install` and `npm run build`, wire Claude Desktop to `node /absolute/path/to/tempo-cli/dist/cli.js mcp`. Full JSON example and contributor notes: [MCP server (contributor reference)](docs/contributing/mcp-dev.md).
+After `npm install` and `npm run build`, wire Claude Desktop to `node /absolute/path/to/tempo-cli/dist/mcp/main.js` (preferred) or `node …/dist/cli.js mcp`. Full JSON example and contributor notes: [MCP server (contributor reference)](docs/contributing/mcp-dev.md).
 
 ### Tools
 

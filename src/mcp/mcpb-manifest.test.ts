@@ -61,13 +61,17 @@ describe("mcpb/manifest.json", () => {
     expect(manifest.user_config.api_key.sensitive).toBe(true);
   });
 
-  it("launches the CLI mcp subcommand via node", () => {
+  it("launches a dedicated MCP entry module (not the CLI subcommand)", () => {
     expect(manifest.server.type).toBe("node");
-    expect(manifest.server.entry_point).toBe("dist/cli.js");
+    expect(manifest.server.entry_point).toBe("dist/mcp/main.js");
     expect(manifest.server.mcp_config.command).toBe("node");
-    // Claude Desktop UtilityProcess already runs entry_point; args must be
-    // only the subcommand. Including the script path again yields:
-    // "too many arguments. Expected 0 arguments but got 2."
-    expect(manifest.server.mcp_config.args).toEqual(["mcp"]);
+    // Claude Desktop's UtilityProcess nodeHost `import()`s each args entry as a
+    // module path. A bare "mcp" subcommand string fails with
+    // "Cannot find module '/mcp'". The CLI entry also cannot be used: Desktop
+    // appends args on top of entry_point and Commander then exits with
+    // "too many arguments".
+    expect(manifest.server.mcp_config.args).toEqual([
+      "${__dirname}/dist/mcp/main.js",
+    ]);
   });
 });

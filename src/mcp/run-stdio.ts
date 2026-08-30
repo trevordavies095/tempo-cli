@@ -33,6 +33,28 @@ export async function runStdioMcpServer(
     cacheDir: options.cacheDir,
   });
   const transport = new StdioServerTransport();
-  await server.connect(transport);
-  writeErrLine("tempo mcp: stdio server connected (JSON-RPC on stdout)");
+  await new Promise<void>((resolve, reject) => {
+    const prevClose = transport.onclose;
+    transport.onclose = () => {
+      try {
+        prevClose?.();
+      } finally {
+        resolve();
+      }
+    };
+    const prevError = transport.onerror;
+    transport.onerror = (err) => {
+      prevError?.(err);
+      // Keep serving unless the transport also closes; log only.
+      writeErrLine(
+        `tempo mcp: transport error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    };
+    server.connect(transport).then(
+      () => {
+        writeErrLine("tempo mcp: stdio server connected (JSON-RPC on stdout)");
+      },
+      reject,
+    );
+  });
 }
