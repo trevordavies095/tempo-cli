@@ -6,11 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import { stringify as stringifyYaml } from "yaml";
 import { computePreFlagDefaults, loadConfigFile } from "./config/file.js";
-import {
-  expandUserHomePath,
-  getDefaultPrescribedFilePath,
-} from "./config/prescribed-path.js";
-import { resolveRecapCacheDir } from "./config/recap-paths.js";
+import { expandUserHomePath } from "./config/prescribed-path.js";
 import { getDefaultSubjectiveFilePath } from "./config/subjective-path.js";
 import { getDefaultConfigPath } from "./config/path.js";
 import {
@@ -32,7 +28,6 @@ import {
 } from "./commands/health.js";
 import {
   probeAuthMe,
-  authFailedApiKeysSettingsMessage,
   authMeHumanSuccessLine,
   authMeHttpErrorMessageForCli,
   AUTH_ME_PATH,
@@ -167,65 +162,18 @@ import {
   shoeMileageHttpErrorMessageForCli,
 } from "./commands/shoe-mileage.js";
 import {
-  fetchRecapWorkoutData,
-  fetchTrendWorkoutListItems,
-  formatTransportMessageWithAttempts,
-} from "./weekly-recap/fetch-workouts.js";
-import {
-  computeRecapHrAnalytics,
-  formatRecapHrAnalyticsHuman,
-  recapHrAnalyticsToJson,
-} from "./weekly-recap/hr-analytics.js";
-import { buildWeeklyRecapCompact } from "./weekly-recap/compact-report.js";
-import {
-  aggregateSummaryStatsFromDetails,
-  avgEasyRunHr,
-  buildWeeklyRecapMarkdownCore,
-} from "./weekly-recap/markdown-report.js";
-import { buildWeeklyRecapReportPayload } from "./weekly-recap/recap-json-report.js";
-import {
-  buildRecapSummaryFromStats,
-  findYearlyWeeklyBucketIndexForRecapMonday,
-  parseYearlyWeeklyBuckets,
-  parseWeeklyRecapResponse,
-} from "./weekly-recap/recap-summary-stats.js";
-import {
-  formatRecapZonesSummary,
-  parseAndValidateHeartRateZones,
-  parseRecapUnitPreference,
-  RECAP_HR_ZONES_REQUIRED_MESSAGE,
-} from "./weekly-recap/recap-settings.js";
-import {
   getSystemTimeZone,
   isValidIanaTimeZone,
-  priorIsoWeekId,
   resolveDefaultRecapWeekSpec,
   resolveRecapWeek,
-  resolveTrendWorkoutListUtcBounds,
 } from "./weekly-recap/resolve-week.js";
 import {
-  buildNotableMarkdownSection,
-  buildRecapNotableSnapshot,
-  recapNotableSnapshotToJson,
-} from "./weekly-recap/notable.js";
-import { buildLongRunSectionOutput } from "./weekly-recap/long-run-section.js";
-import { buildPrescribedQualityOutput } from "./weekly-recap/quality-sessions.js";
-import { normalizeIsoWeekId } from "./weekly-recap/prescribed-week.js";
+  runWeeklyRecap,
+  type SubjectiveCollect,
+  type SubjectiveSource,
+} from "./weekly-recap/run-weekly-recap.js";
 import { collectSubjectiveInteractive } from "./weekly-recap/subjective-interactive.js";
-import {
-  buildCoachPromptMarkdown,
-  buildSubjectiveRecapMarkdown,
-  filterRunsInRecapRange,
-  parseSubjectiveWeek,
-  subjectiveRunsToDateMap,
-  type SubjectiveRunFields,
-  type SubjectiveWeekDoc,
-} from "./weekly-recap/subjective-week.js";
-import {
-  buildTrendsMarkdownSection,
-  computeRecapTrendsSnapshot,
-  recapTrendsSnapshotToJson,
-} from "./weekly-recap/trends.js";
+import { parseSubjectiveWeek } from "./weekly-recap/subjective-week.js";
 import {
   exitCodeForFetchFailure,
   exitCodeForHttpStatus,
@@ -2423,15 +2371,15 @@ ${HELP_GLOBALS_HINT}
       writeErrLine(`tempo weekly-recap: --week omitted; using "${weekSpec}"`);
     }
 
-    const resolved = resolveRecapWeek({
+    const resolvedEarly = resolveRecapWeek({
       weekSpec,
       timeZoneId: tz,
       now: new Date(),
     });
-    if (!resolved.ok) {
+    if (!resolvedEarly.ok) {
       writeCommandError(merged.output, {
         code: CLI_ERROR_INVALID_ARGUMENTS,
-        message: `tempo weekly-recap: ${resolved.message}`,
+        message: `tempo weekly-recap: ${resolvedEarly.message}`,
       });
       process.exit(EXIT_USAGE);
     }
@@ -2452,693 +2400,161 @@ ${HELP_GLOBALS_HINT}
       apiKey: key,
     });
 
-    const authResult = await probeAuthMe(merged.baseUrl, key);
-    if (authResult.kind === "http") {
-      if (authResult.status === 401) {
-        writeCommandError(merged.output, {
-          code: CLI_ERROR_HTTP,
-          message: authFailedApiKeysSettingsMessage(merged.baseUrl),
-        });
-        process.exit(exitCodeForHttpStatus(401));
-      }
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_HTTP,
-        message: `tempo weekly-recap: ${authMeHttpErrorMessageForCli(
-          authResult.status,
-          authResult.body,
-          key,
-        )}`,
-      });
-      process.exit(exitCodeForHttpStatus(authResult.status));
-    }
-    if (authResult.kind === "transport") {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_TRANSPORT,
-        message: formatTransportMessageWithAttempts(
-          `tempo weekly-recap: ${transportErrorMessage(authResult.error)}`,
-          [`GET ${AUTH_ME_PATH}`],
-        ),
-      });
-      process.exit(exitCodeForFetchFailure(authResult.error));
-    }
-
-    if (merged.verbose) {
-      writeErrLine(
-        `tempo weekly-recap: GET ${AUTH_ME_PATH} OK (HTTP ${authResult.status})`,
-      );
-    }
-
-    const [hrRes, unitRes] = await Promise.all([
-      probeSettingsHeartRateZones(merged.baseUrl, key),
-      probeSettingsUnitPreference(merged.baseUrl, key),
-    ]);
-
-    if (hrRes.kind === "transport") {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_TRANSPORT,
-        message: formatTransportMessageWithAttempts(
-          `tempo weekly-recap: ${transportErrorMessage(hrRes.error)}`,
-          [`GET ${SETTINGS_HEART_RATE_ZONES_PATH}`],
-        ),
-      });
-      process.exit(exitCodeForFetchFailure(hrRes.error));
-    }
-    if (unitRes.kind === "transport") {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_TRANSPORT,
-        message: formatTransportMessageWithAttempts(
-          `tempo weekly-recap: ${transportErrorMessage(unitRes.error)}`,
-          [`GET ${SETTINGS_UNIT_PREFERENCE_PATH}`],
-        ),
-      });
-      process.exit(exitCodeForFetchFailure(unitRes.error));
-    }
-    if (hrRes.kind === "http") {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_HTTP,
-        message: `tempo weekly-recap: ${settingsHeartRateZonesHttpErrorMessageForCli(
-          hrRes.status,
-          hrRes.body,
-          key,
-        )}`,
-      });
-      process.exit(exitCodeForHttpStatus(hrRes.status));
-    }
-    if (unitRes.kind === "http") {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_HTTP,
-        message: `tempo weekly-recap: ${settingsUnitPreferenceHttpErrorMessageForCli(
-          unitRes.status,
-          unitRes.body,
-          key,
-        )}`,
-      });
-      process.exit(exitCodeForHttpStatus(unitRes.status));
-    }
-
-    const zonesParsed = parseAndValidateHeartRateZones(hrRes.body);
-    if (!zonesParsed.ok) {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_INVALID_ARGUMENTS,
-        message: `tempo weekly-recap: ${RECAP_HR_ZONES_REQUIRED_MESSAGE}`,
-      });
-      process.exit(EXIT_USAGE);
-    }
-
-    const unitParsed = parseRecapUnitPreference(unitRes.body);
-    if (!unitParsed.ok) {
-      writeCommandError(merged.output, {
-        code: CLI_ERROR_INVALID_ARGUMENTS,
-        message:
-          "tempo weekly-recap: could not parse unit preference (expected metric or imperial).",
-      });
-      process.exit(EXIT_USAGE);
-    }
-
-    const v = resolved.value;
-
-    if (merged.verbose) {
-      writeErrLine(
-        `tempo weekly-recap: week ${v.isoWeekId} (${v.localRange.start}–${v.localRange.end})`,
-      );
-    }
-
-    const trendUtc = resolveTrendWorkoutListUtcBounds(v, tz);
-
-    const [fetchData, trendListRes, wrRes, reRes, beRes] = await Promise.all([
-      fetchRecapWorkoutData({
-        baseUrl: merged.baseUrl,
-        apiKey: key,
-        startDate: v.utcStartDate,
-        endDate: v.utcEndDate,
-      }),
-      merged.includeTrends
-        ? fetchTrendWorkoutListItems({
-            baseUrl: merged.baseUrl,
-            apiKey: key,
-            utcStartDate: trendUtc.utcStartDate,
-            utcEndDate: trendUtc.utcEndDate,
-          })
-        : Promise.resolve({
-            ok: true as const,
-            items: [] as Record<string, unknown>[],
-          }),
-      probeStatsWeeklyRecap(merged.baseUrl, key, {
-        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-        referenceDate: v.localRange.start,
-      }),
-      probeStatsRelativeEffort(merged.baseUrl, key, {
-        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-      }),
-      probeStatsBestEfforts(merged.baseUrl, key),
-    ]);
-
-    if (!fetchData.ok) {
-      const code =
-        fetchData.kind === "invalid"
-          ? CLI_ERROR_INVALID_ARGUMENTS
-          : fetchData.kind === "http"
-            ? CLI_ERROR_HTTP
-            : CLI_ERROR_TRANSPORT;
-      const errMsg =
-        fetchData.kind === "transport"
-          ? formatTransportMessageWithAttempts(
-              `tempo weekly-recap: ${fetchData.message}`,
-              fetchData.attemptedEndpoints,
-            )
-          : fetchData.message;
-      writeCommandError(merged.output, {
-        code,
-        message: errMsg,
-      });
-      if (fetchData.kind === "invalid") {
-        process.exit(EXIT_USAGE);
-      }
-      if (fetchData.kind === "http") {
-        process.exit(exitCodeForHttpStatus(fetchData.httpStatus ?? 400));
-      }
-      process.exit(
-        exitCodeForFetchFailure(
-          fetchData.transportError ?? new Error(fetchData.message),
-        ),
-      );
-    }
-
-    const weeklyRecapParsed =
-      wrRes.kind === "ok" ? parseWeeklyRecapResponse(wrRes.body) : undefined;
-
-    let yearlyWeeklyBody: string | undefined;
-    let yearlyWeeklyOk = false;
-    if (weeklyRecapParsed === undefined) {
-      const yw = await probeStatsYearlyWeekly(merged.baseUrl, key, {
-        periodEndDate: v.localRange.end,
-        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-      });
-      if (yw.kind === "ok") {
-        yearlyWeeklyOk = true;
-        yearlyWeeklyBody = yw.body;
-      }
-    }
-
-    if (merged.verbose) {
-      writeErrLine(
-        `tempo weekly-recap: workouts list rows=${fetchData.listItemCount}, detail bodies=${fetchData.workoutDetails.length}`,
-      );
-    }
-
-    const zoneSummary = formatRecapZonesSummary(zonesParsed.zones);
-
-    let shoesHuman = `Shoes: OK (HTTP ${fetchData.shoesStatus})`;
-    try {
-      const sp = JSON.parse(fetchData.shoesBody.trim()) as unknown;
-      if (Array.isArray(sp)) {
-        shoesHuman = `Shoes: OK (${sp.length} shoe(s), HTTP ${fetchData.shoesStatus})`;
-      }
-    } catch {
-      /* ignore */
-    }
-
-    const hrAnalytics = computeRecapHrAnalytics({
-      zones: zonesParsed.zones,
-      heartRateZonesBody: hrRes.body,
-      workoutDetails: fetchData.workoutDetails.map((d) => ({
-        id: d.id,
-        body: d.body,
-      })),
-      timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
-    });
-
-    const workoutDetailSlice = fetchData.workoutDetails.map((d) => ({
-      id: d.id,
-      body: d.body,
-    }));
-
-    const prescribedPathResolved = expandUserHomePath(
-      merged.prescribedFile?.trim() ||
-        getDefaultPrescribedFilePath(
-          v.isoWeekId,
-          fileLayer.report?.prescribedDir,
-        ),
-    );
-    if (merged.verbose) {
-      writeErrLine(`tempo weekly-recap: prescribed file ${prescribedPathResolved}`);
-    }
-    let prescribedRaw: string | undefined;
-    try {
-      prescribedRaw = await readFile(prescribedPathResolved, "utf8");
-    } catch {
-      prescribedRaw = undefined;
-    }
-
-    const qualityOut = buildPrescribedQualityOutput({
-      fileContent: prescribedRaw,
-      resolvedPath: prescribedPathResolved,
-      resolvedIsoWeekId: v.isoWeekId,
-      timeZoneId: tz,
-      workoutDetails: workoutDetailSlice,
-      timeSeriesByWorkoutId: fetchData.timeSeriesByWorkoutId,
-    });
-
-    const longRunOut = buildLongRunSectionOutput({
-      prescribedRaw,
-      workoutDetails: workoutDetailSlice,
-      hrAnalytics,
-      timeZoneId: tz,
-      unit: unitParsed.unit,
-      resolvedIsoWeekId: v.isoWeekId,
-    });
-
-    const relativeEffortOk = reRes.kind === "ok";
-    const relativeEffortBody = relativeEffortOk ? reRes.body : undefined;
-
-    if (merged.verbose) {
-      const wrPath = buildStatsWeeklyRecapPath({
-        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-        referenceDate: v.localRange.start,
-      });
-      if (wrRes.kind === "ok") {
-        writeErrLine(
-          `tempo weekly-recap: GET ${wrPath} OK (HTTP ${wrRes.status})`,
-        );
-      } else if (wrRes.kind === "http") {
-        writeErrLine(`tempo weekly-recap: GET ${wrPath} HTTP ${wrRes.status}`);
-      } else {
-        writeErrLine(
-          `tempo weekly-recap: GET ${wrPath} transport: ${transportErrorMessage(wrRes.error)}`,
-        );
-      }
-
-      if (weeklyRecapParsed === undefined) {
-        const ywQuery = {
-          periodEndDate: v.localRange.end,
-          timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-        };
-        const ywPath = buildStatsYearlyWeeklyPath(ywQuery);
-        writeErrLine(
-          `tempo weekly-recap: GET ${ywPath} (fallback: weekly-recap unavailable or unparseable)`,
-        );
-        if (yearlyWeeklyOk && yearlyWeeklyBody !== undefined) {
-          const buckets = parseYearlyWeeklyBuckets(yearlyWeeklyBody);
-          const idx = findYearlyWeeklyBucketIndexForRecapMonday(
-            v.localRange.start,
-            buckets,
-          );
-          const first = buckets[0]?.weekStartYmd;
-          const last = buckets[buckets.length - 1]?.weekStartYmd;
-          writeErrLine(
-            `tempo weekly-recap: yearly-weekly rollup: buckets=${buckets.length} span ${first ?? "n/a"}…${last ?? "n/a"}; recapMonday=${v.localRange.start} matchedIndex=${idx}`,
-          );
-        }
-      }
-
-      const rePath = buildStatsRelativeEffortPath({
-        timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-      });
-      if (reRes.kind === "ok") {
-        writeErrLine(
-          `tempo weekly-recap: GET ${rePath} OK (HTTP ${reRes.status})`,
-        );
-      } else if (reRes.kind === "http") {
-        writeErrLine(`tempo weekly-recap: GET ${rePath} HTTP ${reRes.status}`);
-      } else {
-        writeErrLine(
-          `tempo weekly-recap: GET ${rePath} transport: ${transportErrorMessage(reRes.error)}`,
-        );
-      }
-    }
-
-    const agg = aggregateSummaryStatsFromDetails(fetchData.workoutDetails);
-    const summaryFromStats = buildRecapSummaryFromStats({
-      resolved: v,
-      weeklyRecapParsed,
-      yearlyWeeklyBody,
-      yearlyWeeklyOk,
-      relativeEffortBody,
-      relativeEffortOk,
-      workoutDistanceM: agg.totalDistanceM,
-      workoutDurationS: agg.totalDurationS,
-      workoutElevM: agg.totalElevM,
-      workoutReSum: agg.totalRe,
-      runCount: fetchData.workoutDetails.length,
-      easyAvgThisWeek: avgEasyRunHr(hrAnalytics),
-    });
-
-    const cacheDir = resolveRecapCacheDir({
-      cacheDirFlag: merged.cacheDir,
-      reportCacheDir: fileLayer.report?.cacheDir,
-    });
-    if (merged.verbose) {
-      writeErrLine(`tempo weekly-recap: cache dir ${cacheDir}`);
-    }
-    const priorWeekId = priorIsoWeekId(v, tz);
-    let priorBestEffortsBody: string | undefined;
-    let hadPriorCache = false;
-    try {
-      const priorPath = join(cacheDir, `best-efforts-${priorWeekId}.json`);
-      priorBestEffortsBody = await readFile(priorPath, "utf8");
-      hadPriorCache = priorBestEffortsBody.trim().length > 0;
-    } catch {
-      priorBestEffortsBody = undefined;
-      hadPriorCache = false;
-    }
-    if (merged.verbose) {
-      writeErrLine(
-        `tempo weekly-recap: prior best-efforts cache ${hadPriorCache ? "read" : "missing"} (${join(cacheDir, `best-efforts-${priorWeekId}.json`)})`,
-      );
-    }
-
-    const beOk = beRes.kind === "ok";
-    const currentBestEffortsBody = beOk ? beRes.body : undefined;
-
-    const notableSnapshot = buildRecapNotableSnapshot({
-      bestEffortsFetchOk: beOk,
-      currentBestEffortsBody,
-      priorBestEffortsBody,
-      hadPriorCache,
-      shoesBody: fetchData.shoesBody,
-      workoutDetails: workoutDetailSlice,
-      workoutReSum: agg.totalRe,
-      summaryFromStats,
-    });
-
-    const notableMarkdown = buildNotableMarkdownSection(notableSnapshot);
-
-    if (beOk && currentBestEffortsBody?.trim()) {
-      try {
-        await mkdir(cacheDir, { recursive: true });
-        const bePath = join(cacheDir, `best-efforts-${v.isoWeekId}.json`);
-        await atomicWriteFile(
-          bePath,
-          new TextEncoder().encode(currentBestEffortsBody),
-        );
-        if (merged.verbose) {
-          writeErrLine(`tempo weekly-recap: wrote best-efforts cache ${bePath}`);
-        }
-      } catch {
-        /* best-efforts cache write is non-fatal */
-      }
-    }
-
-    let trendsFetchReason: string | undefined;
-    let trendItems: Record<string, unknown>[] = [];
-    if (merged.includeTrends) {
-      if (trendListRes.ok) {
-        trendItems = trendListRes.items;
-      } else {
-        trendsFetchReason =
-          trendListRes.kind === "transport" &&
-          trendListRes.attemptedEndpoints?.length
-            ? formatTransportMessageWithAttempts(
-                `tempo weekly-recap: ${trendListRes.message}`,
-                trendListRes.attemptedEndpoints,
-              )
-            : trendListRes.kind === "transport"
-              ? `tempo weekly-recap: ${trendListRes.message}`
-              : trendListRes.message;
-      }
-    }
-
-    const trendsSnapshot = computeRecapTrendsSnapshot({
-      resolved: v,
-      timeZoneId: tz,
-      zones: zonesParsed.zones,
-      trendListItems: trendItems,
-      recapWorkoutDetails: workoutDetailSlice,
-      included: merged.includeTrends,
-      fetchFailedReason: trendsFetchReason,
-    });
-
-    const trendsMarkdown = buildTrendsMarkdownSection(
-      trendsSnapshot,
-      unitParsed.unit,
-    );
-
-    let subjectiveRecapMd = "";
-    let coachPromptMd = "";
-    let subjectiveByRunDate = new Map<string, SubjectiveRunFields>();
-    let subjectivePayload: Record<string, unknown>;
+    const isoWeekId = resolvedEarly.value.isoWeekId;
+    let subjective: SubjectiveSource | SubjectiveCollect;
 
     if (merged.subjective === false) {
-      subjectivePayload = { skipped: true };
+      subjective = { kind: "skipped" };
     } else {
       const subjectivePathResolved = expandUserHomePath(
         merged.subjectiveFile?.trim() ||
-          getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir),
+          getDefaultSubjectiveFilePath(
+            isoWeekId,
+            fileLayer.report?.subjectiveDir,
+          ),
       );
-      if (merged.verbose) {
-        writeErrLine(`tempo weekly-recap: subjective file ${subjectivePathResolved}`);
-      }
-      let rawSub: string | undefined;
-      if (!merged.refreshSubjective) {
-        try {
-          rawSub = await readFile(subjectivePathResolved, "utf8");
-        } catch {
-          rawSub = undefined;
-        }
-      } else if (merged.verbose) {
-        writeErrLine(
-          "tempo weekly-recap: --refresh-subjective; ignoring existing subjective file",
-        );
-      }
+      const savePath = getDefaultSubjectiveFilePath(
+        isoWeekId,
+        fileLayer.report?.subjectiveDir,
+      );
+      const refreshSubjective = merged.refreshSubjective;
+      const verbose = merged.verbose;
+      // Defer file load / TTY until after workouts are fetched (same order as before).
+      subjective = {
+        kind: "collect",
+        path: subjectivePathResolved,
+        collect: async (ctx) => {
+          let parseError: string | undefined;
 
-      let subjectiveDoc: SubjectiveWeekDoc | undefined;
-      let loadedFromFile = false;
-      let parseError: string | undefined;
-      let interactiveSaved = false;
+          if (refreshSubjective) {
+            if (verbose) {
+              writeErrLine(
+                "tempo weekly-recap: --refresh-subjective; ignoring existing subjective file",
+              );
+            }
+          } else {
+            let rawSub: string | undefined;
+            try {
+              rawSub = await readFile(subjectivePathResolved, "utf8");
+            } catch {
+              rawSub = undefined;
+            }
+            if (rawSub?.trim()) {
+              const parsed = parseSubjectiveWeek(
+                rawSub,
+                subjectivePathResolved,
+              );
+              if (parsed.ok) {
+                return {
+                  kind: "provided",
+                  path: subjectivePathResolved,
+                  doc: parsed.value,
+                  loadedFromFile: true,
+                  interactiveSaved: false,
+                  source: "file",
+                };
+              }
+              parseError = parsed.message;
+              writeErrLine(`tempo weekly-recap: ${parsed.message}`);
+            }
+          }
 
-      if (rawSub?.trim()) {
-        const parsed = parseSubjectiveWeek(rawSub, subjectivePathResolved);
-        if (parsed.ok) {
-          subjectiveDoc = parsed.value;
-          loadedFromFile = true;
-        } else {
-          parseError = parsed.message;
-          writeErrLine(`tempo weekly-recap: ${parsed.message}`);
-        }
-      }
+          if (process.stdin.isTTY) {
+            const subjectiveDoc = await collectSubjectiveInteractive({
+              isoWeekId: ctx.isoWeekId,
+              workoutDetails: ctx.workoutDetails,
+              timeZoneId: ctx.timeZoneId,
+              unit: ctx.unit,
+              stdin: process.stdin,
+              stdout: process.stdout,
+            });
+            let interactiveSaved = false;
+            try {
+              await mkdir(dirname(savePath), { recursive: true });
+              await atomicWriteFile(
+                savePath,
+                new TextEncoder().encode(stringifyYaml(subjectiveDoc)),
+              );
+              interactiveSaved = true;
+            } catch {
+              writeErrLine(
+                "tempo weekly-recap: could not save subjective file (non-fatal).",
+              );
+            }
+            return {
+              kind: "provided",
+              path: subjectivePathResolved,
+              doc: subjectiveDoc,
+              loadedFromFile: false,
+              interactiveSaved,
+              savePath: interactiveSaved ? savePath : undefined,
+              source: "interactive",
+              parseError,
+            };
+          }
 
-      if (subjectiveDoc === undefined && process.stdin.isTTY) {
-        subjectiveDoc = await collectSubjectiveInteractive({
-          isoWeekId: v.isoWeekId,
-          workoutDetails: workoutDetailSlice,
-          timeZoneId: tz,
-          unit: unitParsed.unit,
-          stdin: process.stdin,
-          stdout: process.stdout,
-        });
-        const savePath = getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir);
-        try {
-          await mkdir(dirname(savePath), { recursive: true });
-          await atomicWriteFile(
-            savePath,
-            new TextEncoder().encode(stringifyYaml(subjectiveDoc)),
-          );
-          interactiveSaved = true;
-        } catch {
           writeErrLine(
-            "tempo weekly-recap: could not save subjective file (non-fatal).",
+            "tempo weekly-recap: no subjective file and stdin is not a TTY; subjective sections omitted.",
           );
-        }
-      } else if (
-        subjectiveDoc === undefined &&
-        !process.stdin.isTTY &&
-        !rawSub?.trim()
-      ) {
-        writeErrLine(
-          "tempo weekly-recap: no subjective file and stdin is not a TTY; subjective sections omitted.",
-        );
-      }
-
-      if (subjectiveDoc !== undefined) {
-        const runsInWeek = filterRunsInRecapRange(subjectiveDoc.runs, v);
-        if (loadedFromFile) {
-          const fileWeekNorm = normalizeIsoWeekId(subjectiveDoc.week);
-          const recapWeekNorm = normalizeIsoWeekId(v.isoWeekId);
-          if (fileWeekNorm !== recapWeekNorm) {
-            writeErrLine(
-              `tempo weekly-recap: subjective file week (\`${subjectiveDoc.week}\`) does not match recap week (\`${v.isoWeekId}\`); check ${subjectivePathResolved}`,
-            );
-          }
-          if (runsInWeek.length === 0 && workoutDetailSlice.length > 0) {
-            writeErrLine(
-              `tempo weekly-recap: subjective file has no runs for ${v.isoWeekId}; per-run fields omitted. Delete the file or pass --refresh-subjective to re-prompt.`,
-            );
-          }
-        }
-        subjectiveByRunDate = subjectiveRunsToDateMap(runsInWeek);
-        subjectiveRecapMd = buildSubjectiveRecapMarkdown(subjectiveDoc.weekly);
-        coachPromptMd = buildCoachPromptMarkdown(
-          subjectiveDoc.weekly?.questions_for_coach,
-        );
-        subjectivePayload = {
-          skipped: false,
-          path: subjectivePathResolved,
-          loadedFromFile,
-          parseError,
-          interactiveSaved,
-          savePath: interactiveSaved
-            ? getDefaultSubjectiveFilePath(v.isoWeekId, fileLayer.report?.subjectiveDir)
-            : undefined,
-          week: subjectiveDoc.week,
-          runs: runsInWeek,
-          weekly: subjectiveDoc.weekly ?? null,
-          source: interactiveSaved
-            ? "interactive"
-            : loadedFromFile
-              ? "file"
-              : "unknown",
-        };
-      } else {
-        subjectivePayload = {
-          skipped: false,
-          reason: "no_subjective_data",
-          path: subjectivePathResolved,
-          parseError,
-        };
-      }
+          return {
+            kind: "absent",
+            path: subjectivePathResolved,
+            parseError,
+          };
+        },
+      };
     }
 
-    const reportMarkdown = buildWeeklyRecapMarkdownCore({
-      resolved: v,
+    const result = await runWeeklyRecap({
+      baseUrl: merged.baseUrl,
+      apiKey: key,
+      weekSpec,
       timeZoneId: tz,
-      unit: unitParsed.unit,
-      hrAnalytics,
-      workoutDetails: workoutDetailSlice,
-      shoesBody: fetchData.shoesBody,
-      summaryFromStats,
-      similarRoutesByWorkoutId: fetchData.similarRoutesByWorkoutId,
-      qualitySessionsMarkdown: qualityOut.markdown,
-      longRunMarkdown: longRunOut.markdown,
-      trendsMarkdown,
-      notableMarkdown,
-      subjectiveRecapMarkdown: subjectiveRecapMd,
-      coachPromptMarkdown: coachPromptMd,
-      subjectiveByRunDate,
+      format: merged.format,
+      includeTrends: merged.includeTrends,
+      prescribedFile: merged.prescribedFile,
+      prescribedDir: fileLayer.report?.prescribedDir,
+      cacheDirFlag: merged.cacheDir,
+      cacheDirConfig: fileLayer.report?.cacheDir,
+      subjective,
+      onProgress: merged.verbose ? writeErrLine : undefined,
     });
 
-    const diagnosticHumanLines = [
-      `Week ${v.isoWeekId} (${v.localRange.start} → ${v.localRange.end}, ${tz})`,
-      `UTC startDate: ${v.utcStartDate}`,
-      `UTC endDate: ${v.utcEndDate}`,
-      `timezoneOffsetMinutes: ${v.timezoneOffsetMinutes}`,
-      `Unit preference: ${unitParsed.unit}`,
-      `Heart rate zones: OK (5 zones) — ${zoneSummary}`,
-      `Workouts in range (list rows): ${fetchData.listItemCount}`,
-      `Unique workout IDs: ${fetchData.workoutIds.length}`,
-      `Detail bodies fetched: ${fetchData.workoutDetails.length}`,
-      shoesHuman,
-      "",
-      formatRecapHrAnalyticsHuman(hrAnalytics),
-    ].join("\n");
-
-    const compactText =
-      merged.format === "compact"
-        ? buildWeeklyRecapCompact({
-            resolved: v,
-            timeZoneId: tz,
-            unit: unitParsed.unit,
-            hrAnalytics,
-            workoutDetails: workoutDetailSlice,
-            summaryFromStats,
-            notableSnapshot,
-          })
-        : undefined;
-
-    const humanSuccessBody =
-      merged.format === "markdown"
-        ? reportMarkdown
-        : merged.format === "compact"
-          ? (compactText ?? "")
-          : diagnosticHumanLines;
-
-    const trendsJson = recapTrendsSnapshotToJson(trendsSnapshot);
-
-    const jsonBody: Record<string, unknown> = {
-      ok: true,
-      isoWeekId: v.isoWeekId,
-      localRange: v.localRange,
-      utcStartDate: v.utcStartDate,
-      utcEndDate: v.utcEndDate,
-      timezone: tz,
-      timezoneOffsetMinutes: v.timezoneOffsetMinutes,
-      recapFormat: merged.format,
-      settings: {
-        unitPreference: unitParsed.unit,
-        heartRateZones: {
-          zones: zonesParsed.zones,
-        },
-      },
-      workouts: {
-        count: fetchData.workoutIds.length,
-        ids: fetchData.workoutIds,
-        details: fetchData.workoutDetails.map((d) => ({
-          id: d.id,
-          status: d.status,
-          body: d.body,
-          similarRoutes: fetchData.similarRoutesByWorkoutId[d.id],
-        })),
-      },
-      shoes: {
-        status: fetchData.shoesStatus,
-        body: fetchData.shoesBody,
-      },
-      hrAnalytics: recapHrAnalyticsToJson(hrAnalytics),
-      stats: {
-        weeklyRecap: {
-          ok: wrRes.kind === "ok",
-          parsed: weeklyRecapParsed !== undefined,
-          ...(wrRes.kind === "ok" || wrRes.kind === "http"
-            ? { httpStatus: wrRes.status }
-            : {}),
-          ...(wrRes.kind === "transport"
-            ? { transportError: true }
-            : {}),
-        },
-        relativeEffort: {
-          ok: relativeEffortOk,
-          ...(reRes.kind === "ok" || reRes.kind === "http"
-            ? { httpStatus: reRes.status }
-            : {}),
-          ...(reRes.kind === "transport"
-            ? { transportError: true }
-            : {}),
-        },
-        recapSummary: summaryFromStats,
-      },
-      trends: trendsJson,
-      notable: recapNotableSnapshotToJson(notableSnapshot),
-      prescribed: qualityOut.json,
-      longRun: longRunOut.json,
-      subjective: subjectivePayload,
-      report: buildWeeklyRecapReportPayload({
-        resolved: v,
-        hrAnalytics,
-        workoutDetails: workoutDetailSlice,
-        summaryFromStats,
-        trendsJson,
-        subjective: subjectivePayload,
-      }),
-    };
-
-    if (merged.format === "markdown") {
-      jsonBody.reportMarkdown = reportMarkdown;
+    if (!result.ok) {
+      writeCommandError(merged.output, {
+        code: result.code,
+        message: result.message,
+      });
+      if (result.exit === "usage") {
+        process.exit(EXIT_USAGE);
+      }
+      if ("httpStatus" in result.exit) {
+        process.exit(exitCodeForHttpStatus(result.exit.httpStatus));
+      }
+      process.exit(exitCodeForFetchFailure(result.exit.transport));
     }
-    if (merged.format === "compact" && compactText !== undefined) {
-      jsonBody.compactText = compactText;
+
+    for (const w of result.warnings) {
+      writeErrLine(w);
     }
 
     const writePath = merged.write?.trim();
-    const useStdout = writePath === undefined || writePath === "" || writePath === "-";
+    const useStdout =
+      writePath === undefined || writePath === "" || writePath === "-";
 
     if (useStdout) {
-      writeCommandSuccess(merged.output, humanSuccessBody, jsonBody);
+      writeCommandSuccess(
+        merged.output,
+        result.humanSuccessBody,
+        result.jsonBody,
+      );
       return;
     }
 
     const payload =
       merged.output === "json"
-        ? `${JSON.stringify(jsonBody)}\n`
-        : `${humanSuccessBody}\n`;
+        ? `${JSON.stringify(result.jsonBody)}\n`
+        : `${result.humanSuccessBody}\n`;
     try {
       await atomicWriteFile(writePath, new TextEncoder().encode(payload));
     } catch (e) {
