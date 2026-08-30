@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parse } from "smol-toml";
+import { readOptionalEnv } from "./env.js";
 
 export type OutputMode = "human" | "json";
 
@@ -161,7 +162,7 @@ export function computePreFlagDefaults(file: FileLayer): {
 
   if (file.output != null) output = file.output;
 
-  const envUrl = process.env.TEMPO_BASE_URL?.trim();
+  const envUrl = readOptionalEnv("TEMPO_BASE_URL");
   if (envUrl) baseUrl = normalizeBaseUrl(envUrl);
 
   return { baseUrl, output };

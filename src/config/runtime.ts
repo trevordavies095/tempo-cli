@@ -1,4 +1,5 @@
 import type { FileLayer, OutputMode } from "./file.js";
+import { readOptionalEnv } from "./env.js";
 
 export type EffectiveGlobalConfig = {
   baseUrl: string;
@@ -23,7 +24,7 @@ export function pickApiKey(
 ): string | undefined {
   const fromFlag = flagValue?.trim();
   if (fromFlag) return fromFlag;
-  const fromEnv = process.env.TEMPO_API_KEY?.trim();
+  const fromEnv = readOptionalEnv("TEMPO_API_KEY");
   if (fromEnv) return fromEnv;
   return file.apiKey;
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import { stringify as stringifyYaml } from "yaml";
 import { computePreFlagDefaults, loadConfigFile } from "./config/file.js";
+import { readOptionalEnv } from "./config/env.js";
 import { expandUserHomePath } from "./config/prescribed-path.js";
 import { getDefaultSubjectiveFilePath } from "./config/subjective-path.js";
 import { getDefaultConfigPath } from "./config/path.js";
@@ -295,7 +296,7 @@ configCmd
       output: "human" | "json";
     };
     let key = merged.apiKey?.trim();
-    if (!key) key = process.env.TEMPO_API_KEY?.trim();
+    if (!key) key = readOptionalEnv("TEMPO_API_KEY");
     if (!key) key = readKeyFromStdinIfAvailable();
     if (!key) {
       writeCommandError(merged.output, {
