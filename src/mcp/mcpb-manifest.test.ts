@@ -65,9 +65,9 @@ describe("mcpb/manifest.json", () => {
     expect(manifest.server.type).toBe("node");
     expect(manifest.server.entry_point).toBe("dist/cli.js");
     expect(manifest.server.mcp_config.command).toBe("node");
-    expect(manifest.server.mcp_config.args).toEqual([
-      "${__dirname}/dist/cli.js",
-      "mcp",
-    ]);
+    // Claude Desktop UtilityProcess already runs entry_point; args must be
+    // only the subcommand. Including the script path again yields:
+    // "too many arguments. Expected 0 arguments but got 2."
+    expect(manifest.server.mcp_config.args).toEqual(["mcp"]);
   });
 });

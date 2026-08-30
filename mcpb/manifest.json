@@ -23,7 +23,7 @@
     "entry_point": "dist/cli.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/cli.js", "mcp"],
+      "args": ["mcp"],
       "env": {
         "TEMPO_BASE_URL": "${user_config.base_url}",
         "TEMPO_API_KEY": "${user_config.api_key}"
