@@ -103,6 +103,8 @@ describe("runWeeklyRecap", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.status).toBe("report");
+    if (result.status !== "report") return;
     expect(result.humanSuccessBody).toContain("Weekly Recap");
     expect(result.humanSuccessBody).toContain("2026-W19");
     expect(result.jsonBody.reportMarkdown).toBe(result.humanSuccessBody);
@@ -127,7 +129,7 @@ describe("runWeeklyRecap", () => {
       cacheDirFlag: "/tmp/tempo-recap-test-cache-c",
     });
     expect(compact.ok).toBe(true);
-    if (!compact.ok) return;
+    if (!compact.ok || compact.status !== "report") return;
     expect(compact.jsonBody.recapFormat).toBe("compact");
     expect(compact.jsonBody.compactText).toBe(compact.humanSuccessBody);
     expect(compact.jsonBody.reportMarkdown).toBeUndefined();
@@ -144,7 +146,7 @@ describe("runWeeklyRecap", () => {
       cacheDirFlag: "/tmp/tempo-recap-test-cache-j",
     });
     expect(jsonFmt.ok).toBe(true);
-    if (!jsonFmt.ok) return;
+    if (!jsonFmt.ok || jsonFmt.status !== "report") return;
     expect(jsonFmt.humanSuccessBody).toContain("Week 2026-W19");
     expect(jsonFmt.humanSuccessBody).toContain("UTC startDate:");
     expect(jsonFmt.jsonBody.reportMarkdown).toBeUndefined();
@@ -174,7 +176,7 @@ describe("runWeeklyRecap", () => {
       },
     });
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok || result.status !== "report") return;
     expect(result.subjectiveState).toBe("present");
     expect(
       result.warnings.some((w) => w.includes("does not match recap week")),
@@ -200,7 +202,7 @@ describe("runWeeklyRecap", () => {
       },
     });
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok || result.status !== "report") return;
     expect(result.subjectiveState).toBe("missing");
     expect(result.jsonBody.subjective).toMatchObject({
       skipped: false,
@@ -208,6 +210,66 @@ describe("runWeeklyRecap", () => {
     });
     expect(stdoutSpy).not.toHaveBeenCalled();
     expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns needs_subjective early when subjectiveGate and absent", async () => {
+    vi.spyOn(authMe, "probeAuthMe").mockResolvedValue({
+      kind: "ok",
+      status: 200,
+      body: JSON.stringify({ id: "u1" }),
+    });
+    vi.spyOn(settingsUnit, "probeSettingsUnitPreference").mockResolvedValue({
+      kind: "ok",
+      status: 200,
+      body: JSON.stringify({ unit: "imperial" }),
+    });
+    const hrSpy = vi.spyOn(settingsHr, "probeSettingsHeartRateZones");
+    vi.spyOn(fetchWorkouts, "fetchRecapWorkoutData").mockResolvedValue({
+      ok: true,
+      listItemCount: 1,
+      workoutIds: ["w1"],
+      workoutDetails: [
+        {
+          id: "w1",
+          status: 200,
+          body: JSON.stringify({
+            startedAt: "2026-05-05T12:00:00-04:00",
+            runType: "Easy",
+            distanceM: 5000,
+            durationS: 1800,
+            rpe: 4,
+          }),
+        },
+      ],
+      timeSeriesByWorkoutId: {},
+      shoesStatus: 200,
+      shoesBody: "[]",
+      similarRoutesByWorkoutId: {},
+    });
+
+    const result = await runWeeklyRecap({
+      baseUrl: "http://localhost:5001",
+      apiKey: "tmp_test",
+      weekSpec: "2026-W19",
+      timeZoneId: "America/New_York",
+      format: "markdown",
+      includeTrends: false,
+      subjectiveGate: true,
+      subjective: {
+        kind: "absent",
+        path: "/tmp/missing-subjective.yaml",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe("needs_subjective");
+    if (result.status !== "needs_subjective") return;
+    expect(result.subjectivePath).toBe("/tmp/missing-subjective.yaml");
+    expect(result.unit).toBe("imperial");
+    expect(result.workoutDetails).toHaveLength(1);
+    expect(result.workoutDetails[0]!.id).toBe("w1");
+    expect(hrSpy).not.toHaveBeenCalled();
   });
 
   it("supports two sequential calls with different weeks without leakage", async () => {
@@ -235,6 +297,7 @@ describe("runWeeklyRecap", () => {
     });
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
+    if (first.status !== "report" || second.status !== "report") return;
     expect(first.resolved.isoWeekId).toBe("2026-W19");
     expect(second.resolved.isoWeekId).toBe("2026-W20");
     expect(first.humanSuccessBody).toContain("2026-W19");

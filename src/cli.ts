@@ -2535,6 +2535,15 @@ ${HELP_GLOBALS_HINT}
       process.exit(exitCodeForFetchFailure(result.exit.transport));
     }
 
+    if (result.status === "needs_subjective") {
+      writeCommandError(merged.output, {
+        code: CLI_ERROR_INVALID_ARGUMENTS,
+        message:
+          "tempo weekly-recap: internal error: subjective gate returned without MCP mode",
+      });
+      process.exit(EXIT_USAGE);
+    }
+
     for (const w of result.warnings) {
       writeErrLine(w);
     }
@@ -2570,7 +2579,7 @@ ${HELP_GLOBALS_HINT}
 program
   .command("mcp")
   .description(
-    "Start a stdio MCP server for Claude Desktop (and other MCP clients). Exposes check_connection and generate_weekly_recap; uses the same base URL, API key, timezone, and [report] path resolution as other commands. Stdout is JSON-RPC only — do not pipe CLI success output through this process.",
+    "Start a stdio MCP server for Claude Desktop (and other MCP clients). Exposes check_connection, generate_weekly_recap, and save_subjective_responses; uses the same base URL, API key, timezone, and [report] path resolution as other commands. Stdout is JSON-RPC only — do not pipe CLI success output through this process.",
   )
   .addHelpText(
     "after",

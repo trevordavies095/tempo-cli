@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +14,7 @@ import * as statsRelativeEffort from "../commands/stats-relative-effort.js";
 import * as statsWeeklyRecap from "../commands/stats-weekly-recap.js";
 import * as statsYearlyWeekly from "../commands/stats-yearly-weekly.js";
 import * as fetchWorkouts from "../weekly-recap/fetch-workouts.js";
+import { parseSubjectiveWeek } from "../weekly-recap/subjective-week.js";
 import {
   CHECK_CONNECTION_TOOL_DESCRIPTION,
   CHECK_CONNECTION_TOOL_NAME,
@@ -19,6 +24,10 @@ import {
   GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION,
   GENERATE_WEEKLY_RECAP_TOOL_NAME,
 } from "./generate-weekly-recap.js";
+import {
+  SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
+  SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
+} from "./save-subjective-responses.js";
 
 const originalFetch = globalThis.fetch;
 const SECRET_KEY = "tmp_protocol_secret_key";
@@ -40,7 +49,9 @@ function zonesBody(): string {
   });
 }
 
-function mockHappyPathProbes() {
+function mockHappyPathProbes(
+  workoutDetails: { id: string; status: number; body: string }[] = [],
+) {
   vi.spyOn(authMe, "probeAuthMe").mockResolvedValue({
     kind: "ok",
     status: 200,
@@ -58,9 +69,9 @@ function mockHappyPathProbes() {
   });
   vi.spyOn(fetchWorkouts, "fetchRecapWorkoutData").mockResolvedValue({
     ok: true,
-    listItemCount: 0,
-    workoutIds: [],
-    workoutDetails: [],
+    listItemCount: workoutDetails.length,
+    workoutIds: workoutDetails.map((d) => d.id),
+    workoutDetails,
     timeSeriesByWorkoutId: {},
     shoesStatus: 200,
     shoesBody: "[]",
@@ -105,6 +116,7 @@ async function connectPair(config: {
   apiKey?: string;
   subjectiveDir?: string;
   cacheDir?: string;
+  timezone?: string;
 }): Promise<{ client: Client; close: () => Promise<void> }> {
   const server = createTempoMcpServer({
     ...config,
@@ -127,20 +139,28 @@ async function connectPair(config: {
   };
 }
 
+function toolText(result: {
+  content: unknown;
+}): string {
+  return (result.content as { type: string; text: string }[])
+    .map((c) => c.text)
+    .join("\n");
+}
+
 describe("createTempoMcpServer (protocol)", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
-  it("tools/list returns check_connection and generate_weekly_recap with stable schema snapshot", async () => {
+  it("tools/list returns three tools with stable schema snapshot", async () => {
     const { client, close } = await connectPair({
       baseUrl: BASE,
       apiKey: SECRET_KEY,
     });
     try {
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(2);
+      expect(listed.tools).toHaveLength(3);
       const byName = Object.fromEntries(
         listed.tools.map((t) => [t.name, t]),
       );
@@ -149,6 +169,9 @@ describe("createTempoMcpServer (protocol)", () => {
       );
       expect(byName[GENERATE_WEEKLY_RECAP_TOOL_NAME]?.description).toBe(
         GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION,
+      );
+      expect(byName[SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME]?.description).toBe(
+        SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
       );
       expect(
         listed.tools.map((t) => ({
@@ -180,9 +203,7 @@ describe("createTempoMcpServer (protocol)", () => {
         arguments: {},
       });
       expect(result.isError).toBeFalsy();
-      const text = (result.content as { type: string; text: string }[])
-        .map((c) => c.text)
-        .join("\n");
+      const text = toolText(result);
       expect(text).toMatch(/authenticated/);
       expect(text).toContain("name=Ada");
       expect(text).not.toContain(SECRET_KEY);
@@ -209,9 +230,7 @@ describe("createTempoMcpServer (protocol)", () => {
         arguments: {},
       });
       expect(result.isError).toBe(true);
-      const text = (result.content as { type: string; text: string }[])
-        .map((c) => c.text)
-        .join("\n");
+      const text = toolText(result);
       expect(text).toMatch(/rejected|Auth failed/i);
       expect(text).not.toContain(SECRET_KEY);
     } finally {
@@ -232,9 +251,7 @@ describe("createTempoMcpServer (protocol)", () => {
         arguments: {},
       });
       expect(result.isError).toBe(true);
-      const text = (result.content as { type: string; text: string }[])
-        .map((c) => c.text)
-        .join("\n");
+      const text = toolText(result);
       expect(text).toMatch(/Unreachable/);
       expect(text).not.toContain(SECRET_KEY);
     } finally {
@@ -244,9 +261,6 @@ describe("createTempoMcpServer (protocol)", () => {
 
   it("generate_weekly_recap: skip_subjective returns markdown envelope", async () => {
     mockHappyPathProbes();
-    const { mkdir, mkdtemp } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
     const root = await mkdtemp(join(tmpdir(), "tempo-mcp-proto-"));
     const subjectiveDir = join(root, "subjective");
     const cacheDir = join(root, "cache");
@@ -270,19 +284,115 @@ describe("createTempoMcpServer (protocol)", () => {
         },
       });
       expect(result.isError).toBeFalsy();
-      const text = (result.content as { type: string; text: string }[])
-        .map((c) => c.text)
-        .join("\n");
+      const text = toolText(result);
       expect(text).not.toContain(SECRET_KEY);
       const envelope = JSON.parse(text) as {
+        status: string;
         week: string;
         subjective: string;
         reportMarkdown: string;
       };
+      expect(envelope.status).toBe("report");
       expect(envelope.week).toBe("2026-W19");
       expect(envelope.subjective).toBe("skipped");
       expect(envelope.reportMarkdown).toContain("Weekly Recap");
       expect(envelope.reportMarkdown).toContain("No runs recorded this week.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("flagship: needs_subjective → save → complete report with subjective", async () => {
+    mockHappyPathProbes([
+      {
+        id: "w1",
+        status: 200,
+        body: JSON.stringify({
+          startedAt: "2026-05-05T12:00:00-04:00",
+          runType: "Easy",
+          distanceM: 8000,
+          durationS: 2400,
+          rpe: 4,
+        }),
+      },
+    ]);
+    const root = await mkdtemp(join(tmpdir(), "tempo-mcp-flagship-"));
+    const subjectiveDir = join(root, "subjective");
+    const cacheDir = join(root, "cache");
+    await mkdir(subjectiveDir, { recursive: true });
+    await mkdir(cacheDir, { recursive: true });
+
+    const { client, close } = await connectPair({
+      baseUrl: BASE,
+      apiKey: SECRET_KEY,
+      subjectiveDir,
+      cacheDir,
+      timezone: "America/New_York",
+    });
+    try {
+      const gateResult = await client.callTool({
+        name: GENERATE_WEEKLY_RECAP_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          include_trends: false,
+        },
+      });
+      expect(gateResult.isError).toBeFalsy();
+      const gate = JSON.parse(toolText(gateResult)) as {
+        status: string;
+        week: string;
+        runs: { date: string | null; apiRpe: number | null }[];
+        questionnaire: { all_fields_optional: boolean };
+      };
+      expect(gate.status).toBe("needs_subjective");
+      expect(gate.week).toBe("2026-W19");
+      expect(gate.runs).toHaveLength(1);
+      expect(gate.runs[0]!.apiRpe).toBe(4);
+      expect(gate.questionnaire.all_fields_optional).toBe(true);
+
+      const saveResult = await client.callTool({
+        name: SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          runs: [{ date: "2026-05-05", rpe: 4, felt: 8, pain: "none" }],
+          weekly: {
+            stress_level: "low",
+            feeling_into_next_week: "ready",
+            questions_for_coach: ["Keep volume?"],
+          },
+        },
+      });
+      expect(saveResult.isError).toBeFalsy();
+      const saved = JSON.parse(toolText(saveResult)) as {
+        ok: boolean;
+        path: string;
+      };
+      expect(saved.ok).toBe(true);
+      const yamlRaw = await readFile(saved.path, "utf8");
+      const parsedYaml = parseSubjectiveWeek(yamlRaw, saved.path);
+      expect(parsedYaml.ok).toBe(true);
+
+      // Re-mock for second generate (spies were already set; still valid).
+      const reportResult = await client.callTool({
+        name: GENERATE_WEEKLY_RECAP_TOOL_NAME,
+        arguments: {
+          week: "2026-W19",
+          timezone: "America/New_York",
+          include_trends: false,
+        },
+      });
+      expect(reportResult.isError).toBeFalsy();
+      const report = JSON.parse(toolText(reportResult)) as {
+        status: string;
+        subjective: string;
+        reportMarkdown: string;
+      };
+      expect(report.status).toBe("report");
+      expect(report.subjective).toBe("present");
+      expect(report.reportMarkdown).toContain("Weekly Recap");
+      expect(report.reportMarkdown).toMatch(/Subjective|Felt: 8|RPE: 4|Questions for coach/i);
     } finally {
       await close();
     }

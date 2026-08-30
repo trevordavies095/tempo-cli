@@ -14,7 +14,6 @@ import * as statsYearlyWeekly from "../commands/stats-yearly-weekly.js";
 import * as fetchWorkouts from "../weekly-recap/fetch-workouts.js";
 import {
   GENERATE_WEEKLY_RECAP_TOOL_NAME,
-  MISSING_SUBJECTIVE_WARNING,
   generateWeeklyRecap,
   generateWeeklyRecapToolResult,
 } from "./generate-weekly-recap.js";
@@ -35,7 +34,7 @@ function zonesBody(): string {
   });
 }
 
-function mockHappyPathProbes() {
+function mockHappyPathProbes(workoutDetails: { id: string; status: number; body: string }[] = []) {
   vi.spyOn(authMe, "probeAuthMe").mockResolvedValue({
     kind: "ok",
     status: 200,
@@ -53,9 +52,9 @@ function mockHappyPathProbes() {
   });
   vi.spyOn(fetchWorkouts, "fetchRecapWorkoutData").mockResolvedValue({
     ok: true,
-    listItemCount: 0,
-    workoutIds: [],
-    workoutDetails: [],
+    listItemCount: workoutDetails.length,
+    workoutIds: workoutDetails.map((d) => d.id),
+    workoutDetails,
     timeSeriesByWorkoutId: {},
     shoesStatus: 200,
     shoesBody: "[]",
@@ -128,6 +127,9 @@ describe("generateWeeklyRecap", () => {
     );
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
+    expect(outcome.kind).toBe("report");
+    if (outcome.kind !== "report") return;
+    expect(outcome.envelope.status).toBe("report");
     expect(outcome.envelope.week).toBe("2026-W19");
     expect(outcome.envelope.timezone).toBe("America/New_York");
     expect(outcome.envelope.subjective).toBe("skipped");
@@ -135,7 +137,6 @@ describe("generateWeeklyRecap", () => {
     expect(outcome.envelope.reportMarkdown).toContain(
       "No runs recorded this week.",
     );
-    expect(outcome.envelope.warnings).not.toContain(MISSING_SUBJECTIVE_WARNING);
   });
 
   it("returns present when subjective YAML exists", async () => {
@@ -145,9 +146,11 @@ describe("generateWeeklyRecap", () => {
       join(dirs.subjectiveDir, "subjective-2026-W19.yaml"),
       [
         "week: 2026-W19",
-        "runs: []",
+        "runs:",
+        "  - date: 2026-05-05",
+        "    rpe: 5",
         "weekly:",
-        "  sleep: ok",
+        "  stress_level: low",
       ].join("\n"),
       "utf8",
     );
@@ -166,12 +169,26 @@ describe("generateWeeklyRecap", () => {
     );
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
+    expect(outcome.kind).toBe("report");
+    if (outcome.kind !== "report") return;
     expect(outcome.envelope.subjective).toBe("present");
     expect(outcome.envelope.reportMarkdown).toContain("Weekly Recap");
   });
 
-  it("returns missing + warning when subjective file is absent", async () => {
-    mockHappyPathProbes();
+  it("returns needs_subjective when subjective file is absent", async () => {
+    mockHappyPathProbes([
+      {
+        id: "w1",
+        status: 200,
+        body: JSON.stringify({
+          startedAt: "2026-05-05T12:00:00-04:00",
+          runType: "Easy",
+          distanceM: 5000,
+          durationS: 1800,
+          rpe: 4,
+        }),
+      },
+    ]);
     const dirs = await tempDirs();
     const outcome = await generateWeeklyRecap(
       {
@@ -188,9 +205,55 @@ describe("generateWeeklyRecap", () => {
     );
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.envelope.subjective).toBe("missing");
-    expect(outcome.envelope.warnings).toContain(MISSING_SUBJECTIVE_WARNING);
-    expect(outcome.envelope.reportMarkdown).toContain("Weekly Recap");
+    expect(outcome.kind).toBe("needs_subjective");
+    if (outcome.kind !== "needs_subjective") return;
+    expect(outcome.payload.status).toBe("needs_subjective");
+    expect(outcome.payload.week).toBe("2026-W19");
+    expect(outcome.payload.runs).toHaveLength(1);
+    expect(outcome.payload.runs[0]!.apiRpe).toBe(4);
+    expect(outcome.payload.runs[0]!.date).toBe("2026-05-05");
+    expect(outcome.payload.questionnaire.all_fields_optional).toBe(true);
+    expect(
+      Object.prototype.hasOwnProperty.call(outcome.payload, "reportMarkdown"),
+    ).toBe(false);
+  });
+
+  it("refresh_subjective re-gates when a file already exists", async () => {
+    mockHappyPathProbes([
+      {
+        id: "w1",
+        status: 200,
+        body: JSON.stringify({
+          startedAt: "2026-05-05T12:00:00-04:00",
+          runType: "Easy",
+          distanceM: 5000,
+          durationS: 1800,
+        }),
+      },
+    ]);
+    const dirs = await tempDirs();
+    await writeFile(
+      join(dirs.subjectiveDir, "subjective-2026-W19.yaml"),
+      "week: 2026-W19\nruns: []\n",
+      "utf8",
+    );
+    const outcome = await generateWeeklyRecap(
+      {
+        baseUrl: "http://localhost:5001",
+        apiKey: "tmp_test",
+        subjectiveDir: dirs.subjectiveDir,
+        cacheDir: dirs.cacheDir,
+      },
+      {
+        week: "2026-W19",
+        timezone: "America/New_York",
+        refresh_subjective: true,
+        include_trends: false,
+      },
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.kind).toBe("needs_subjective");
   });
 
   it("errors on missing API key", async () => {
@@ -246,7 +309,7 @@ describe("generateWeeklyRecap", () => {
     expect(outcome.text).not.toContain(secret);
   });
 
-  it("empty week is success with empty-week markdown", async () => {
+  it("empty week with skip_subjective is success with empty-week markdown", async () => {
     mockHappyPathProbes();
     const dirs = await tempDirs();
     const outcome = await generateWeeklyRecap(
@@ -264,35 +327,48 @@ describe("generateWeeklyRecap", () => {
       },
     );
     expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
+    if (!outcome.ok || outcome.kind !== "report") return;
     expect(outcome.envelope.reportMarkdown).toContain(
       "No runs recorded this week.",
     );
   });
 
-  it("sets prescribed true when prescribed YAML loads with sessions", async () => {
+  it("empty week without skip still gates with empty runs", async () => {
     mockHappyPathProbes();
-    vi.spyOn(fetchWorkouts, "fetchRecapWorkoutData").mockResolvedValue({
-      ok: true,
-      listItemCount: 1,
-      workoutIds: ["w1"],
-      workoutDetails: [
-        {
+    const dirs = await tempDirs();
+    const outcome = await generateWeeklyRecap(
+      {
+        baseUrl: "http://localhost:5001",
+        apiKey: "tmp_test",
+        subjectiveDir: dirs.subjectiveDir,
+        cacheDir: dirs.cacheDir,
+      },
+      {
+        week: "2026-W19",
+        timezone: "America/New_York",
+        include_trends: false,
+      },
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.kind).toBe("needs_subjective");
+    if (outcome.kind !== "needs_subjective") return;
+    expect(outcome.payload.runs).toEqual([]);
+  });
+
+  it("sets prescribed true when prescribed YAML loads with sessions", async () => {
+    mockHappyPathProbes([
+      {
+        id: "w1",
+        status: 200,
+        body: JSON.stringify({
           id: "w1",
-          status: 200,
-          body: JSON.stringify({
-            id: "w1",
-            startedAt: "2026-05-09T12:00:00.000Z",
-            runType: "Workout",
-            avgHeartRateBpm: 180,
-          }),
-        },
-      ],
-      timeSeriesByWorkoutId: {},
-      shoesStatus: 200,
-      shoesBody: "[]",
-      similarRoutesByWorkoutId: {},
-    });
+          startedAt: "2026-05-09T12:00:00.000Z",
+          runType: "Workout",
+          avgHeartRateBpm: 180,
+        }),
+      },
+    ]);
     const dirs = await tempDirs();
     await writeFile(
       join(dirs.prescribedDir, "prescribed-2026-W19.yaml"),
@@ -328,7 +404,7 @@ describe("generateWeeklyRecap", () => {
       },
     );
     expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
+    if (!outcome.ok || outcome.kind !== "report") return;
     expect(outcome.envelope.prescribed).toBe(true);
     expect(outcome.envelope.reportMarkdown).toMatch(/Quality session/i);
   });
@@ -355,9 +431,11 @@ describe("generateWeeklyRecap", () => {
       .map((c) => c.text)
       .join("\n");
     const parsed = JSON.parse(text) as {
+      status: string;
       week: string;
       reportMarkdown: string;
     };
+    expect(parsed.status).toBe("report");
     expect(parsed.week).toBe("2026-W19");
     expect(parsed.reportMarkdown).toContain("Weekly Recap");
     expect(GENERATE_WEEKLY_RECAP_TOOL_NAME).toBe("generate_weekly_recap");

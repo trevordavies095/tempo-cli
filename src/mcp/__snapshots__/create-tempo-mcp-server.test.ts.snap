@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`createTempoMcpServer (protocol) > tools/list returns check_connection and generate_weekly_recap with stable schema snapshot 1`] = `
+exports[`createTempoMcpServer (protocol) > tools/list returns three tools with stable schema snapshot 1`] = `
 [
   {
     "description": "Probe the configured Tempo instance: GET /health (no auth), then GET /auth/me with the configured API key. Reports whether the instance is reachable and whether the key authenticates. Use this when setup fails or before generating a weekly recap.",
@@ -11,7 +11,7 @@ exports[`createTempoMcpServer (protocol) > tools/list returns check_connection a
     "name": "check_connection",
   },
   {
-    "description": "Generate the Tempo weekly recap markdown report for a Mon–Sun week (same engine as \`tempo weekly-recap\`). Optional week (last|current|YYYY-Www|YYYY-MM-DD; omit for smart default), timezone, include_trends, and skip_subjective. When subjective YAML is missing and skip_subjective is false, still returns the report with a warning (interactive gate comes later). Prefer skip_subjective: true for a quick check-in. Result is JSON text with reportMarkdown plus metadata.",
+    "description": "Generate the Tempo weekly recap markdown report for a Mon–Sun week (same engine as \`tempo weekly-recap\`). Optional week (last|current|YYYY-Www|YYYY-MM-DD; omit for smart default), timezone, include_trends, skip_subjective, and refresh_subjective. When subjective YAML is missing (or refresh_subjective is true) and skip_subjective is false, returns status needs_subjective with the week's runs and questionnaire instead of a report — interview the user, call save_subjective_responses, then call this tool again. Prefer skip_subjective: true for a quick check-in without the interview.",
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -19,8 +19,12 @@ exports[`createTempoMcpServer (protocol) > tools/list returns check_connection a
           "description": "Include rolling trends section (extra workouts fetch). Default from config [report].include_trends or true.",
           "type": "boolean",
         },
+        "refresh_subjective": {
+          "description": "Re-open the subjective interview even when a subjective file already exists for the week (mirrors CLI --refresh-subjective).",
+          "type": "boolean",
+        },
         "skip_subjective": {
-          "description": "Skip subjective YAML and omit subjective sections. Default false; when false and no file exists, report still generates with a warning.",
+          "description": "Skip subjective YAML and omit subjective sections. Bypasses the needs_subjective gate.",
           "type": "boolean",
         },
         "timezone": {
@@ -35,6 +39,109 @@ exports[`createTempoMcpServer (protocol) > tools/list returns check_connection a
       "type": "object",
     },
     "name": "generate_weekly_recap",
+  },
+  {
+    "description": "Validate and write subjective-{week}.yaml for a Tempo weekly recap (same schema as the interactive CLI). Call after interviewing the athlete when generate_weekly_recap returned needs_subjective. Then call generate_weekly_recap again for the complete report. Does not call the Tempo API.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "runs": {
+          "description": "Per-run subjective rows (date-keyed; omit a row if nothing answered for that date)",
+          "items": {
+            "properties": {
+              "date": {
+                "description": "Local calendar date YYYY-MM-DD (must fall in the week Mon–Sun)",
+                "type": "string",
+              },
+              "felt": {
+                "description": "Optional felt rating 1–10",
+                "type": "number",
+              },
+              "pain": {
+                "description": "Optional pain / niggles text",
+                "type": "string",
+              },
+              "rpe": {
+                "description": "Optional RPE 1–10",
+                "type": "number",
+              },
+            },
+            "required": [
+              "date",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "timezone": {
+          "description": "IANA timezone used to validate run dates fall in Mon–Sun (default: config or system)",
+          "type": "string",
+        },
+        "week": {
+          "description": "ISO week id for the file, e.g. "2026-W35" (required)",
+          "type": "string",
+        },
+        "weekly": {
+          "description": "Optional weekly subjective fields (omit entirely if none answered)",
+          "properties": {
+            "body_check": {
+              "type": "string",
+            },
+            "feeling_into_next_week": {
+              "type": "string",
+            },
+            "questions_for_coach": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "sleep_avg_hrs": {
+              "type": "number",
+            },
+            "sleep_range_hrs": {
+              "additionalItems": false,
+              "description": "Optional [low, high] sleep hours",
+              "items": [
+                {
+                  "type": "number",
+                },
+                {
+                  "type": "number",
+                },
+              ],
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array",
+            },
+            "strength_sessions": {
+              "properties": {
+                "completed": {
+                  "type": "number",
+                },
+                "notes": {
+                  "type": "string",
+                },
+                "planned": {
+                  "type": "number",
+                },
+              },
+              "type": "object",
+            },
+            "stress_level": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      "required": [
+        "week",
+        "runs",
+      ],
+      "type": "object",
+    },
+    "name": "save_subjective_responses",
   },
 ]
 `;

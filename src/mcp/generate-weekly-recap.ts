@@ -11,6 +11,12 @@ import {
   EXIT_SERVER_ERROR,
   exitCodeForHttpStatus,
 } from "../exit/exits.js";
+import { isPlainObject, pickFirst } from "../output/human-summary.js";
+import {
+  formatDistanceDm,
+  formatDuration,
+} from "../weekly-recap/markdown-report.js";
+import type { RecapUnitPreference } from "../weekly-recap/recap-settings.js";
 import {
   getSystemTimeZone,
   isValidIanaTimeZone,
@@ -21,16 +27,17 @@ import {
   runWeeklyRecap,
   type SubjectiveSource,
 } from "../weekly-recap/run-weekly-recap.js";
-import { parseSubjectiveWeek } from "../weekly-recap/subjective-week.js";
+import { extractApiRpe } from "../weekly-recap/subjective-interactive.js";
+import {
+  parseSubjectiveWeek,
+  workoutLocalDate,
+} from "../weekly-recap/subjective-week.js";
 import { textToolResult } from "./tool-result.js";
 
 export const GENERATE_WEEKLY_RECAP_TOOL_NAME = "generate_weekly_recap";
 
 export const GENERATE_WEEKLY_RECAP_TOOL_DESCRIPTION =
-  "Generate the Tempo weekly recap markdown report for a Mon–Sun week (same engine as `tempo weekly-recap`). Optional week (last|current|YYYY-Www|YYYY-MM-DD; omit for smart default), timezone, include_trends, and skip_subjective. When subjective YAML is missing and skip_subjective is false, still returns the report with a warning (interactive gate comes later). Prefer skip_subjective: true for a quick check-in. Result is JSON text with reportMarkdown plus metadata.";
-
-export const MISSING_SUBJECTIVE_WARNING =
-  "Subjective data missing for this week; report generated without subjective sections. Pass skip_subjective: true to suppress this notice.";
+  "Generate the Tempo weekly recap markdown report for a Mon–Sun week (same engine as `tempo weekly-recap`). Optional week (last|current|YYYY-Www|YYYY-MM-DD; omit for smart default), timezone, include_trends, skip_subjective, and refresh_subjective. When subjective YAML is missing (or refresh_subjective is true) and skip_subjective is false, returns status needs_subjective with the week's runs and questionnaire instead of a report — interview the user, call save_subjective_responses, then call this tool again. Prefer skip_subjective: true for a quick check-in without the interview.";
 
 /** Zod shape for MCP `registerTool` inputSchema. */
 export const generateWeeklyRecapInputShape = {
@@ -56,7 +63,13 @@ export const generateWeeklyRecapInputShape = {
     .boolean()
     .optional()
     .describe(
-      "Skip subjective YAML and omit subjective sections. Default false; when false and no file exists, report still generates with a warning.",
+      "Skip subjective YAML and omit subjective sections. Bypasses the needs_subjective gate.",
+    ),
+  refresh_subjective: z
+    .boolean()
+    .optional()
+    .describe(
+      "Re-open the subjective interview even when a subjective file already exists for the week (mirrors CLI --refresh-subjective).",
     ),
 } as const;
 
@@ -65,6 +78,7 @@ export type GenerateWeeklyRecapArgs = {
   timezone?: string;
   include_trends?: boolean;
   skip_subjective?: boolean;
+  refresh_subjective?: boolean;
 };
 
 export type GenerateWeeklyRecapConfig = {
@@ -80,6 +94,7 @@ export type GenerateWeeklyRecapConfig = {
 };
 
 export type GenerateWeeklyRecapEnvelope = {
+  status: "report";
   week: string;
   timezone: string;
   subjective: "skipped" | "present" | "missing";
@@ -89,9 +104,73 @@ export type GenerateWeeklyRecapEnvelope = {
   reportMarkdown: string;
 };
 
+export type NeedsSubjectiveRun = {
+  id: string;
+  date: string | null;
+  runType: string | null;
+  distance: string | null;
+  duration: string | null;
+  apiRpe: number | null;
+};
+
+export type NeedsSubjectivePayload = {
+  status: "needs_subjective";
+  week: string;
+  timezone: string;
+  localRange: { start: string; end: string };
+  subjectivePath: string;
+  /** YAML is date-keyed (last write wins). Prefer one interview answer per calendar date. */
+  note: string;
+  runs: NeedsSubjectiveRun[];
+  questionnaire: {
+    order: string[];
+    per_run: {
+      rpe: string;
+      felt: string;
+      pain: string;
+    };
+    weekly: {
+      sleep_avg_hrs: string;
+      sleep_range_hrs: string;
+      strength_sessions: string;
+      stress_level: string;
+      body_check: string;
+      feeling_into_next_week: string;
+      questions_for_coach: string;
+    };
+    all_fields_optional: true;
+  };
+};
+
 export type GenerateWeeklyRecapOutcome =
-  | { ok: true; envelope: GenerateWeeklyRecapEnvelope }
+  | { ok: true; kind: "report"; envelope: GenerateWeeklyRecapEnvelope }
+  | { ok: true; kind: "needs_subjective"; payload: NeedsSubjectivePayload }
   | { ok: false; text: string; taxonomy: string };
+
+export const SUBJECTIVE_QUESTIONNAIRE: NeedsSubjectivePayload["questionnaire"] =
+  {
+    order: [
+      "per_run (RPE, Felt, Pain for each calendar date)",
+      "weekly (sleep, strength, stress, body, feeling)",
+      "questions_for_coach",
+    ],
+    per_run: {
+      rpe: "Optional integer 1–10. If apiRpe is set on the run, prefer that value and do not re-ask unless the athlete corrects it.",
+      felt: "Optional integer 1–10 (how the run felt).",
+      pain: "Optional free-text niggles / pain (or omit).",
+    },
+    weekly: {
+      sleep_avg_hrs: "Optional average sleep hours this week.",
+      sleep_range_hrs: "Optional [low, high] sleep hours.",
+      strength_sessions:
+        "Optional { completed, planned, notes } for strength work.",
+      stress_level: "Optional free-text stress level.",
+      body_check: "Optional free-text body check.",
+      feeling_into_next_week: "Optional free-text outlook.",
+      questions_for_coach: "Optional string array of questions for the coach.",
+    },
+    all_fields_optional: true,
+  };
 
 function prescribedIncluded(prescribed: unknown): boolean {
   if (prescribed === null || typeof prescribed !== "object") return false;
@@ -107,8 +186,99 @@ function trendsIncluded(trends: unknown, includeTrendsFlag: boolean): boolean {
   return (trends as { included?: boolean }).included === true;
 }
 
+function parseJsonObject(body: string): Record<string, unknown> | undefined {
+  const t = body.trim();
+  if (!t) return undefined;
+  try {
+    const v = JSON.parse(t) as unknown;
+    return isPlainObject(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sortDetailsByStart(
+  details: readonly { id: string; body: string }[],
+  timeZoneId: string,
+): { id: string; body: string }[] {
+  return [...details].sort((a, b) => {
+    const wa = parseJsonObject(a.body);
+    const wb = parseJsonObject(b.body);
+    const sa =
+      wa && typeof pickFirst(wa, ["startedAt", "StartedAt"]) === "string"
+        ? Date.parse(
+            (pickFirst(wa, ["startedAt", "StartedAt"]) as string).trim(),
+          )
+        : 0;
+    const sb =
+      wb && typeof pickFirst(wb, ["startedAt", "StartedAt"]) === "string"
+        ? Date.parse(
+            (pickFirst(wb, ["startedAt", "StartedAt"]) as string).trim(),
+          )
+        : 0;
+    const aMs = Number.isFinite(sa) ? sa : 0;
+    const bMs = Number.isFinite(sb) ? sb : 0;
+    if (aMs !== bMs) return aMs - bMs;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+export function buildNeedsSubjectiveRuns(
+  workoutDetails: readonly { id: string; body: string }[],
+  timeZoneId: string,
+  unit: RecapUnitPreference,
+): NeedsSubjectiveRun[] {
+  const ordered = sortDetailsByStart(workoutDetails, timeZoneId);
+  const runs: NeedsSubjectiveRun[] = [];
+  for (const d of ordered) {
+    const w = parseJsonObject(d.body);
+    if (!w) {
+      runs.push({
+        id: d.id,
+        date: null,
+        runType: null,
+        distance: null,
+        duration: null,
+        apiRpe: null,
+      });
+      continue;
+    }
+    const startedRaw = pickFirst(w, ["startedAt", "StartedAt"]);
+    const startedAt =
+      typeof startedRaw === "string" && startedRaw.trim()
+        ? startedRaw.trim()
+        : undefined;
+    const date = startedAt
+      ? (workoutLocalDate(startedAt, timeZoneId) ?? null)
+      : null;
+    const runTypeRaw = pickFirst(w, ["runType", "RunType"]);
+    const runType =
+      typeof runTypeRaw === "string" && runTypeRaw.trim()
+        ? runTypeRaw.trim()
+        : null;
+    const dm = pickFirst(w, ["distanceM", "Distance"]);
+    const distanceM =
+      typeof dm === "number" && Number.isFinite(dm) ? dm : undefined;
+    const ds = pickFirst(w, ["durationS", "Duration"]);
+    const durationS =
+      typeof ds === "number" && Number.isFinite(ds) ? ds : undefined;
+    const apiRpe = extractApiRpe(w) ?? null;
+    runs.push({
+      id: d.id,
+      date,
+      runType,
+      distance:
+        distanceM !== undefined ? formatDistanceDm(distanceM, unit) : null,
+      duration: durationS !== undefined ? formatDuration(durationS) : null,
+      apiRpe,
+    });
+  }
+  return runs;
+}
+
 async function resolveSubjectiveSource(args: {
   skipSubjective: boolean;
+  refreshSubjective: boolean;
   isoWeekId: string;
   subjectiveDir?: string;
 }): Promise<SubjectiveSource> {
@@ -120,6 +290,10 @@ async function resolveSubjectiveSource(args: {
     args.isoWeekId,
     args.subjectiveDir,
   );
+
+  if (args.refreshSubjective) {
+    return { kind: "absent", path };
+  }
 
   let raw: string | undefined;
   try {
@@ -148,7 +322,7 @@ async function resolveSubjectiveSource(args: {
 }
 
 /**
- * Run the weekly recap for MCP. Stream-free; returns envelope or error text.
+ * Run the weekly recap for MCP. Stream-free; returns report, needs_subjective, or error.
  */
 export async function generateWeeklyRecap(
   config: GenerateWeeklyRecapConfig,
@@ -211,11 +385,17 @@ export async function generateWeeklyRecap(
       : (config.includeTrendsDefault ?? true);
 
   const skipSubjective = args.skip_subjective === true;
+  const refreshSubjective = args.refresh_subjective === true;
   const subjective = await resolveSubjectiveSource({
     skipSubjective,
+    refreshSubjective,
     isoWeekId: resolvedEarly.value.isoWeekId,
     subjectiveDir: config.subjectiveDir,
   });
+
+  const shouldGate =
+    !skipSubjective &&
+    (refreshSubjective || subjective.kind === "absent");
 
   const result = await runWeeklyRecap({
     baseUrl,
@@ -223,10 +403,24 @@ export async function generateWeeklyRecap(
     weekSpec,
     timeZoneId,
     format: "markdown",
-    includeTrends,
+    includeTrends: shouldGate ? false : includeTrends,
     prescribedDir: config.prescribedDir,
     cacheDirConfig: config.cacheDir,
-    subjective,
+    subjective: shouldGate
+      ? {
+          kind: "absent",
+          path:
+            subjective.kind === "skipped"
+              ? getDefaultSubjectiveFilePath(
+                  resolvedEarly.value.isoWeekId,
+                  config.subjectiveDir,
+                )
+              : subjective.path,
+          parseError:
+            subjective.kind === "absent" ? subjective.parseError : undefined,
+        }
+      : subjective,
+    subjectiveGate: shouldGate,
     now,
   });
 
@@ -250,27 +444,36 @@ export async function generateWeeklyRecap(
     };
   }
 
-  const warnings = [...result.warnings];
-  if (result.subjectiveState === "missing") {
-    const already = warnings.some((w) =>
-      w.includes("Subjective data missing for this week"),
-    );
-    if (!already) {
-      warnings.push(MISSING_SUBJECTIVE_WARNING);
-    }
+  if (result.status === "needs_subjective") {
+    const payload: NeedsSubjectivePayload = {
+      status: "needs_subjective",
+      week: result.resolved.isoWeekId,
+      timezone: result.timeZoneId,
+      localRange: result.resolved.localRange,
+      subjectivePath: result.subjectivePath,
+      note: "Subjective YAML is date-keyed (one row per YYYY-MM-DD; last write wins for same-day doubles). Interview once per calendar date, then call save_subjective_responses.",
+      runs: buildNeedsSubjectiveRuns(
+        result.workoutDetails,
+        result.timeZoneId,
+        result.unit,
+      ),
+      questionnaire: SUBJECTIVE_QUESTIONNAIRE,
+    };
+    return { ok: true, kind: "needs_subjective", payload };
   }
 
   const envelope: GenerateWeeklyRecapEnvelope = {
+    status: "report",
     week: result.resolved.isoWeekId,
     timezone: result.timeZoneId,
     subjective: result.subjectiveState,
     prescribed: prescribedIncluded(result.jsonBody.prescribed),
     trends: trendsIncluded(result.jsonBody.trends, includeTrends),
-    warnings,
+    warnings: [...result.warnings],
     reportMarkdown: result.humanSuccessBody,
   };
 
-  return { ok: true, envelope };
+  return { ok: true, kind: "report", envelope };
 }
 
 export async function generateWeeklyRecapToolResult(
@@ -280,6 +483,9 @@ export async function generateWeeklyRecapToolResult(
   const outcome = await generateWeeklyRecap(config, args);
   if (!outcome.ok) {
     return textToolResult(outcome.text, { isError: true });
+  }
+  if (outcome.kind === "needs_subjective") {
+    return textToolResult(JSON.stringify(outcome.payload, null, 2));
   }
   return textToolResult(JSON.stringify(outcome.envelope, null, 2));
 }

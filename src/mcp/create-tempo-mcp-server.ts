@@ -6,6 +6,12 @@ import {
   generateWeeklyRecapInputShape,
   generateWeeklyRecapToolResult,
 } from "./generate-weekly-recap.js";
+import {
+  SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
+  SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
+  saveSubjectiveResponsesInputShape,
+  saveSubjectiveResponsesToolResult,
+} from "./save-subjective-responses.js";
 
 export type TempoMcpServerConfig = {
   baseUrl: string;
@@ -72,6 +78,29 @@ export function createTempoMcpServer(config: TempoMcpServerConfig): McpServer {
           timezone: args.timezone,
           include_trends: args.include_trends,
           skip_subjective: args.skip_subjective,
+          refresh_subjective: args.refresh_subjective,
+        },
+      ),
+  );
+
+  server.registerTool(
+    SAVE_SUBJECTIVE_RESPONSES_TOOL_NAME,
+    {
+      title: "Save subjective responses",
+      description: SAVE_SUBJECTIVE_RESPONSES_TOOL_DESCRIPTION,
+      inputSchema: saveSubjectiveResponsesInputShape,
+    },
+    async (args) =>
+      saveSubjectiveResponsesToolResult(
+        {
+          subjectiveDir: config.subjectiveDir,
+          timezone: config.timezone,
+        },
+        {
+          week: args.week,
+          timezone: args.timezone,
+          runs: args.runs,
+          weekly: args.weekly,
         },
       ),
   );

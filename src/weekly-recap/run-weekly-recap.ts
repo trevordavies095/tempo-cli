@@ -150,11 +150,18 @@ export type RunWeeklyRecapInput = {
   cacheDirConfig?: string;
   now?: Date;
   subjective: SubjectiveSource | SubjectiveCollect;
+  /**
+   * When true and `subjective` is already `absent`, stop after auth + unit +
+   * workout fetch and return `status: "needs_subjective"` (MCP interview gate).
+   * CLI omits this flag.
+   */
+  subjectiveGate?: boolean;
   onProgress?: (line: string) => void;
 };
 
-export type RunWeeklyRecapOk = {
+export type RunWeeklyRecapReportOk = {
   ok: true;
+  status: "report";
   humanSuccessBody: string;
   jsonBody: Record<string, unknown>;
   warnings: string[];
@@ -162,6 +169,21 @@ export type RunWeeklyRecapOk = {
   timeZoneId: string;
   subjectiveState: "skipped" | "present" | "missing";
 };
+
+export type RunWeeklyRecapNeedsSubjectiveOk = {
+  ok: true;
+  status: "needs_subjective";
+  warnings: string[];
+  resolved: RecapWeekResolved;
+  timeZoneId: string;
+  unit: RecapUnitPreference;
+  workoutDetails: { id: string; body: string }[];
+  subjectivePath: string;
+};
+
+export type RunWeeklyRecapOk =
+  | RunWeeklyRecapReportOk
+  | RunWeeklyRecapNeedsSubjectiveOk;
 
 export type RunWeeklyRecapErr = {
   ok: false;
@@ -252,6 +274,84 @@ export async function runWeeklyRecap(
     `tempo weekly-recap: GET ${AUTH_ME_PATH} OK (HTTP ${authResult.status})`,
   );
 
+  const vEarly = resolved.value;
+  progress(
+    `tempo weekly-recap: week ${vEarly.isoWeekId} (${vEarly.localRange.start}–${vEarly.localRange.end})`,
+  );
+
+  /** MCP interview gate: absent subjective + subjectiveGate → stop after workouts. */
+  if (input.subjectiveGate === true && input.subjective.kind === "absent") {
+    const unitResGate = await probeSettingsUnitPreference(baseUrl, key);
+    if (unitResGate.kind === "transport") {
+      return transportErr(
+        formatTransportMessageWithAttempts(
+          `tempo weekly-recap: ${transportErrorMessage(unitResGate.error)}`,
+          [`GET ${SETTINGS_UNIT_PREFERENCE_PATH}`],
+        ),
+        unitResGate.error,
+      );
+    }
+    if (unitResGate.kind === "http") {
+      return httpErr(
+        `tempo weekly-recap: ${settingsUnitPreferenceHttpErrorMessageForCli(
+          unitResGate.status,
+          unitResGate.body,
+          key,
+        )}`,
+        unitResGate.status,
+      );
+    }
+    const unitParsedGate = parseRecapUnitPreference(unitResGate.body);
+    if (!unitParsedGate.ok) {
+      return usageErr(
+        "tempo weekly-recap: could not parse unit preference (expected metric or imperial).",
+      );
+    }
+
+    const fetchGate = await fetchRecapWorkoutData({
+      baseUrl,
+      apiKey: key,
+      startDate: vEarly.utcStartDate,
+      endDate: vEarly.utcEndDate,
+    });
+    if (!fetchGate.ok) {
+      if (fetchGate.kind === "invalid") {
+        return usageErr(fetchGate.message);
+      }
+      if (fetchGate.kind === "http") {
+        return httpErr(fetchGate.message, fetchGate.httpStatus ?? 400);
+      }
+      return transportErr(
+        formatTransportMessageWithAttempts(
+          `tempo weekly-recap: ${fetchGate.message}`,
+          fetchGate.attemptedEndpoints,
+        ),
+        fetchGate.transportError ?? new Error(fetchGate.message),
+      );
+    }
+
+    progress(
+      `tempo weekly-recap: workouts list rows=${fetchGate.listItemCount}, detail bodies=${fetchGate.workoutDetails.length}`,
+    );
+    progress(
+      `tempo weekly-recap: subjective gate (no file at ${input.subjective.path})`,
+    );
+
+    return {
+      ok: true,
+      status: "needs_subjective",
+      warnings,
+      resolved: vEarly,
+      timeZoneId: tz,
+      unit: unitParsedGate.unit,
+      workoutDetails: fetchGate.workoutDetails.map((d) => ({
+        id: d.id,
+        body: d.body,
+      })),
+      subjectivePath: input.subjective.path,
+    };
+  }
+
   const [hrRes, unitRes] = await Promise.all([
     probeSettingsHeartRateZones(baseUrl, key),
     probeSettingsUnitPreference(baseUrl, key),
@@ -309,10 +409,6 @@ export async function runWeeklyRecap(
   }
 
   const v = resolved.value;
-
-  progress(
-    `tempo weekly-recap: week ${v.isoWeekId} (${v.localRange.start}–${v.localRange.end})`,
-  );
 
   const trendUtc = resolveTrendWorkoutListUtcBounds(v, tz);
 
@@ -795,6 +891,7 @@ export async function runWeeklyRecap(
 
   return {
     ok: true,
+    status: "report",
     humanSuccessBody,
     jsonBody,
     warnings,
