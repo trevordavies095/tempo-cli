@@ -117,7 +117,8 @@ describe("buildWeeklyRecapCompact", () => {
       },
     });
 
-    expect(text).toContain("# Weekly Recap — Week of");
+    expect(text).toContain("# Weekly Recap — 2026-W19");
+    expect(text).toContain("Mon May 4 – Sun May 10, 2026");
     expect(text).toContain("Summary");
     expect(text).toContain("Mileage");
     expect(text).toMatch(/Z[1-5].*[█░]/);

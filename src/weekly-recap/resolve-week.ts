@@ -77,6 +77,20 @@ function mondaySundayContaining(
   return { monday, sunday };
 }
 
+/**
+ * Default `--week` when the flag is omitted: Sat–Sun → in-progress week (coach recap
+ * before Monday); Mon → last completed Mon–Sun; Tue–Fri → current week.
+ */
+export function resolveDefaultRecapWeekSpec(
+  now: Date,
+  timeZoneId: string,
+): "last" | "current" {
+  const today = DateTime.fromJSDate(now, { zone: timeZoneId }).startOf("day");
+  if (today.weekday >= 6) return "current";
+  if (today.weekday === 1) return "last";
+  return "current";
+}
+
 /** Most recently completed Mon–Sun (see weekly recap spec §3.5). */
 function lastCompletedWeek(
   timeZone: string,

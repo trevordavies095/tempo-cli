@@ -184,6 +184,22 @@ function formatElevationM(m: number | undefined, unit: RecapUnitPreference): str
   return `${Math.round(m)} m`;
 }
 
+/** Human-readable Mon–Sun label for recap headers (includes ISO week id). */
+export function formatRecapWeekRangeLabel(
+  resolved: RecapWeekResolved,
+  timeZoneId: string,
+): string {
+  const a = DateTime.fromISO(resolved.localRange.start, { zone: timeZoneId });
+  const b = DateTime.fromISO(resolved.localRange.end, { zone: timeZoneId });
+  if (!a.isValid || !b.isValid) {
+    return `${resolved.isoWeekId} (${resolved.localRange.start} – ${resolved.localRange.end})`;
+  }
+  const startFmt =
+    a.year === b.year ? a.toFormat("MMM d") : a.toFormat("MMM d, yyyy");
+  const endFmt = b.toFormat("MMM d, yyyy");
+  return `${resolved.isoWeekId} (Mon ${startFmt} – Sun ${endFmt})`;
+}
+
 export function formatStartedTitle(
   startedAt: string | undefined,
   timeZoneId: string,
@@ -830,21 +846,11 @@ export function buildWeeklyRecapMarkdownCore(input: WeeklyRecapMarkdownInput): s
 
   const shoeLookup = buildShoeLookup(shoesBody);
 
-  const rangeLabel = (() => {
-    const a = DateTime.fromISO(resolved.localRange.start, {
-      zone: timeZoneId,
-    });
-    const b = DateTime.fromISO(resolved.localRange.end, { zone: timeZoneId });
-    if (!a.isValid || !b.isValid) {
-      return `${resolved.localRange.start} – ${resolved.localRange.end}`;
-    }
-    const y = b.year;
-    return `${a.toFormat("MMM d")} – ${b.toFormat("MMM d")}, ${y}`;
-  })();
+  const rangeLabel = formatRecapWeekRangeLabel(resolved, timeZoneId);
 
   const sections: string[] = [];
 
-  sections.push(`# Weekly Recap — Week of ${rangeLabel}`);
+  sections.push(`# Weekly Recap — ${rangeLabel}`);
   sections.push("");
 
   if (workoutDetails.length === 0) {

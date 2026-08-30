@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { computeRecapHrAnalytics } from "./hr-analytics.js";
-import { buildWeeklyRecapMarkdownCore } from "./markdown-report.js";
+import { buildWeeklyRecapMarkdownCore, formatRecapWeekRangeLabel } from "./markdown-report.js";
 import type { SubjectiveRunFields } from "./subjective-week.js";
 import type { RecapSummaryFromStats } from "./recap-summary-stats.js";
 import type { RecapWeekResolved } from "./resolve-week.js";
@@ -33,6 +33,14 @@ function zonesBody(): string {
     zones: fiveZones,
   });
 }
+
+describe("formatRecapWeekRangeLabel", () => {
+  it("includes ISO week id and Mon–Sun bounds", () => {
+    expect(
+      formatRecapWeekRangeLabel(resolvedSample, "America/New_York"),
+    ).toBe("2026-W19 (Mon May 4 – Sun May 10, 2026)");
+  });
+});
 
 describe("buildWeeklyRecapMarkdownCore", () => {
   it("emits minimal Markdown for an empty week", () => {

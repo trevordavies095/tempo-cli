@@ -199,6 +199,7 @@ import {
   getSystemTimeZone,
   isValidIanaTimeZone,
   priorIsoWeekId,
+  resolveDefaultRecapWeekSpec,
   resolveRecapWeek,
   resolveTrendWorkoutListUtcBounds,
 } from "./weekly-recap/resolve-week.js";
@@ -209,6 +210,7 @@ import {
 } from "./weekly-recap/notable.js";
 import { buildLongRunSectionOutput } from "./weekly-recap/long-run-section.js";
 import { buildPrescribedQualityOutput } from "./weekly-recap/quality-sessions.js";
+import { normalizeIsoWeekId } from "./weekly-recap/prescribed-week.js";
 import { collectSubjectiveInteractive } from "./weekly-recap/subjective-interactive.js";
 import {
   buildCoachPromptMarkdown,
@@ -2295,8 +2297,7 @@ program
   )
   .option(
     "--week <spec>",
-    'Which week: "last" (default), "current", YYYY-Www (ISO week), or YYYY-MM-DD (a date in the week)',
-    "last",
+    'Which week: omit for a smart default (Sat–Sun → current, Mon → last completed, Tue–Fri → current), or pass "last", "current", YYYY-Www (ISO week), or YYYY-MM-DD (a date in the week)',
   )
   .option(
     "--timezone <iana>",
@@ -2344,15 +2345,24 @@ program
     "--no-subjective",
     "Skip subjective file, prompts, and §2.9/§2.10 sections.",
   )
+  .option(
+    "--refresh-subjective",
+    "Ignore any existing subjective sidecar and re-prompt (TTY) or skip file load.",
+    false,
+  )
   .addHelpText(
     "after",
     `
 Examples:
   tempo weekly-recap
   tempo weekly-recap --week current --timezone America/New_York
+  tempo weekly-recap --week last
   tempo weekly-recap --week 2026-W19 --output json
   tempo weekly-recap --write ./recap.md
+  tempo weekly-recap --refresh-subjective
   tempo weekly-recap --no-include-trends
+
+When --week is omitted, Sat–Sun resolve to the in-progress Mon–Sun week (typical coach recap); Mon resolves to the week that just ended; Tue–Fri resolve to the current week. Pass --week last or --week current to override explicitly.
 
 Runs GET /auth/me, settings (heart-rate-zones, unit-preference), then GET /workouts for the week, GET /workouts/{id} per workout (max 4 concurrent), GET /workouts/{id}/time-series (paginated HR samples, max 4 concurrent workouts), GET /workouts/{id}/similar-routes (maxResults=3 when the workout has route data), GET /shoes, GET /stats/weekly-recap (referenceDate = recap Monday, timezoneOffsetMinutes) for §2.2 summary columns with GET /stats/yearly-weekly as fallback when that response is missing or invalid, GET /stats/relative-effort (timezoneOffsetMinutes) to enrich the relative-effort 3-week cell, and GET /stats/best-efforts for §2.8 PR detection (cached under the default tempo cache dir for week-over-week diffs). Optional local YAML prescribed-file enables §2.5 quality session checks vs splits/HR. With trends enabled (default), also GET /workouts for the rolling §2.7 window (mon−21d…sun−7d). With --format markdown (default), success output is the full Markdown weekly recap; --format compact prints a shorter terminal summary; --format json prints structured diagnostics only (no recap body). JSON CLI mode (--output json) always includes a structured "report" object (week, range, summary, zones, runs, trends, subjective) alongside existing keys; it includes reportMarkdown when --format markdown and compactText when --format compact. Same API key resolution: --api-key, TEMPO_API_KEY, config.
 
@@ -2366,7 +2376,7 @@ ${HELP_GLOBALS_HINT}
       output: "human" | "json";
       baseUrl: string;
       apiKey?: string;
-      week: string;
+      week?: string;
       timezone?: string;
       write?: string;
       format: "markdown" | "json" | "compact";
@@ -2374,6 +2384,7 @@ ${HELP_GLOBALS_HINT}
       prescribedFile?: string;
       subjectiveFile?: string;
       subjective: boolean;
+      refreshSubjective: boolean;
       cacheDir?: string;
       verbose: boolean;
     };
@@ -2402,8 +2413,18 @@ ${HELP_GLOBALS_HINT}
       );
     }
 
+    const weekFromCli =
+      typeof merged.week === "string" ? merged.week.trim() : "";
+    const weekSpec =
+      weekFromCli.length > 0
+        ? weekFromCli
+        : resolveDefaultRecapWeekSpec(new Date(), tz);
+    if (merged.verbose && weekFromCli.length === 0) {
+      writeErrLine(`tempo weekly-recap: --week omitted; using "${weekSpec}"`);
+    }
+
     const resolved = resolveRecapWeek({
-      weekSpec: merged.week.trim(),
+      weekSpec,
       timeZoneId: tz,
       now: new Date(),
     });
@@ -2868,10 +2889,16 @@ ${HELP_GLOBALS_HINT}
         writeErrLine(`tempo weekly-recap: subjective file ${subjectivePathResolved}`);
       }
       let rawSub: string | undefined;
-      try {
-        rawSub = await readFile(subjectivePathResolved, "utf8");
-      } catch {
-        rawSub = undefined;
+      if (!merged.refreshSubjective) {
+        try {
+          rawSub = await readFile(subjectivePathResolved, "utf8");
+        } catch {
+          rawSub = undefined;
+        }
+      } else if (merged.verbose) {
+        writeErrLine(
+          "tempo weekly-recap: --refresh-subjective; ignoring existing subjective file",
+        );
       }
 
       let subjectiveDoc: SubjectiveWeekDoc | undefined;
@@ -2924,6 +2951,20 @@ ${HELP_GLOBALS_HINT}
 
       if (subjectiveDoc !== undefined) {
         const runsInWeek = filterRunsInRecapRange(subjectiveDoc.runs, v);
+        if (loadedFromFile) {
+          const fileWeekNorm = normalizeIsoWeekId(subjectiveDoc.week);
+          const recapWeekNorm = normalizeIsoWeekId(v.isoWeekId);
+          if (fileWeekNorm !== recapWeekNorm) {
+            writeErrLine(
+              `tempo weekly-recap: subjective file week (\`${subjectiveDoc.week}\`) does not match recap week (\`${v.isoWeekId}\`); check ${subjectivePathResolved}`,
+            );
+          }
+          if (runsInWeek.length === 0 && workoutDetailSlice.length > 0) {
+            writeErrLine(
+              `tempo weekly-recap: subjective file has no runs for ${v.isoWeekId}; per-run fields omitted. Delete the file or pass --refresh-subjective to re-prompt.`,
+            );
+          }
+        }
         subjectiveByRunDate = subjectiveRunsToDateMap(runsInWeek);
         subjectiveRecapMd = buildSubjectiveRecapMarkdown(subjectiveDoc.weekly);
         coachPromptMd = buildCoachPromptMarkdown(

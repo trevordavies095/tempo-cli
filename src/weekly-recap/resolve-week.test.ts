@@ -5,6 +5,7 @@ import {
   getSystemTimeZone,
   isValidIanaTimeZone,
   priorIsoWeekId,
+  resolveDefaultRecapWeekSpec,
   resolveRecapWeek,
   resolveTrendWorkoutListUtcBounds,
 } from "./resolve-week.js";
@@ -38,6 +39,32 @@ describe("isValidIanaTimeZone", () => {
 describe("getSystemTimeZone", () => {
   it("returns a non-empty id", () => {
     expect(getSystemTimeZone().length).toBeGreaterThan(0);
+  });
+});
+
+describe("resolveDefaultRecapWeekSpec", () => {
+  it("Sat → current (in-progress week for coach recap)", () => {
+    expect(
+      resolveDefaultRecapWeekSpec(dtNy(2026, 8, 1), NY),
+    ).toBe("current");
+  });
+
+  it("Sun → current", () => {
+    expect(
+      resolveDefaultRecapWeekSpec(dtNy(2026, 8, 2), NY),
+    ).toBe("current");
+  });
+
+  it("Mon → last completed week", () => {
+    expect(
+      resolveDefaultRecapWeekSpec(dtNy(2026, 8, 3), NY),
+    ).toBe("last");
+  });
+
+  it("Tue–Fri → current", () => {
+    expect(
+      resolveDefaultRecapWeekSpec(dtNy(2026, 8, 5), NY),
+    ).toBe("current");
   });
 });
 

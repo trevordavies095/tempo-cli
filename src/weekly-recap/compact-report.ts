@@ -2,8 +2,6 @@
  * §3.9 compact weekly recap: terminal-friendly summary (no splits, drift per run, or trends).
  */
 
-import { DateTime } from "luxon";
-
 import { isPlainObject, pickFirst } from "../output/human-summary.js";
 import type { RecapHrAnalyticsResult, RecapHrRunRow } from "./hr-analytics.js";
 import type { RecapNotableSnapshot } from "./notable.js";
@@ -17,6 +15,7 @@ import {
   formatDistanceDm,
   formatDuration,
   formatPaceFromSecondsPerKm,
+  formatRecapWeekRangeLabel,
   formatStartedTitle,
   formatWeeklyRecapSummaryPlain,
   formatWeekZoneSection,
@@ -118,20 +117,10 @@ export function buildWeeklyRecapCompact(input: WeeklyRecapCompactInput): string 
     notableSnapshot,
   } = input;
 
-  const rangeLabel = (() => {
-    const a = DateTime.fromISO(resolved.localRange.start, {
-      zone: timeZoneId,
-    });
-    const b = DateTime.fromISO(resolved.localRange.end, { zone: timeZoneId });
-    if (!a.isValid || !b.isValid) {
-      return `${resolved.localRange.start} – ${resolved.localRange.end}`;
-    }
-    const y = b.year;
-    return `${a.toFormat("MMM d")} – ${b.toFormat("MMM d")}, ${y}`;
-  })();
+  const rangeLabel = formatRecapWeekRangeLabel(resolved, timeZoneId);
 
   const sections: string[] = [];
-  sections.push(`# Weekly Recap — Week of ${rangeLabel}`);
+  sections.push(`# Weekly Recap — ${rangeLabel}`);
   sections.push("");
 
   if (workoutDetails.length === 0) {
