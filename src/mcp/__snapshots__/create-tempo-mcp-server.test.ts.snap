@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`createTempoMcpServer (protocol) > tools/list returns exactly check_connection with stable schema snapshot 1`] = `
+{
+  "description": "Probe the configured Tempo instance: GET /health (no auth), then GET /auth/me with the configured API key. Reports whether the instance is reachable and whether the key authenticates. Use this when setup fails or before generating a weekly recap.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object",
+  },
+  "name": "check_connection",
+}
+`;

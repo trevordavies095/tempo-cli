@@ -1,6 +1,6 @@
 # CLI runtime (contributor reference)
 
-Single entry point for how the executable handles configuration, streams, exit codes, and JSON errors. User-facing narrative also lives in the [README](../../README.md); this page ties behavior to **source files**.
+Single entry point for how the executable handles configuration, streams, exit codes, and JSON errors. User-facing narrative also lives in the [README](../../README.md); this page ties behavior to **source files**. For the stdio MCP server (`tempo mcp`), see [mcp-dev.md](./mcp-dev.md).
 
 ## Environment variables
 
@@ -139,3 +139,4 @@ Adding a new GET-only command in these groups does **not** require updating the 
 | Health probe (`GET /health`) | [health.ts](../../src/commands/health.ts) |
 | Server version (`GET /version`) | [server-version.ts](../../src/commands/server-version.ts) |
 | Current user (`GET /auth/me`) | [auth-me.ts](../../src/commands/auth-me.ts) |
+| MCP stdio server (`tempo mcp`) | [mcp-dev.md](./mcp-dev.md); [create-tempo-mcp-server.ts](../../src/mcp/create-tempo-mcp-server.ts), [run-stdio.ts](../../src/mcp/run-stdio.ts), [check-connection.ts](../../src/mcp/check-connection.ts) |

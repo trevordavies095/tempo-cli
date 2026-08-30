@@ -19,6 +19,7 @@ import {
   isVersionInvocation,
   peekOutputModeFromArgv,
 } from "./cli/argv-output-peek.js";
+import { runStdioMcpServer } from "./mcp/run-stdio.js";
 import {
   healthHumanSuccessLine,
   healthHttpErrorMessage,
@@ -2564,6 +2565,44 @@ ${HELP_GLOBALS_HINT}
       });
       process.exit(EXIT_USAGE);
     }
+  });
+
+program
+  .command("mcp")
+  .description(
+    "Start a stdio MCP server for Claude Desktop (and other MCP clients). Exposes check_connection; uses the same base URL and API key resolution as other commands. Stdout is JSON-RPC only — do not pipe CLI success output through this process.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  tempo mcp
+  TEMPO_BASE_URL=http://localhost:5001 TEMPO_API_KEY=tmp_... tempo mcp
+  tempo --base-url http://localhost:5001 --api-key tmp_... mcp
+
+Contributor wiring for Claude Desktop: docs/contributing/mcp-dev.md
+
+${HELP_GLOBALS_HINT}
+`,
+  )
+  .action(async function (this: Command) {
+    const merged = this.optsWithGlobals() as {
+      output: "human" | "json";
+      baseUrl: string;
+      apiKey?: string;
+    };
+    const key = pickApiKey(merged.apiKey, fileLayer);
+    setEffectiveGlobalConfig({
+      baseUrl: merged.baseUrl,
+      output: merged.output,
+      apiKey: key,
+    });
+    await runStdioMcpServer({
+      baseUrl: merged.baseUrl,
+      apiKey: key,
+      name: pkg.name ?? "tempo-cli",
+      version: typeof pkg.version === "string" ? pkg.version : "0.0.0",
+    });
   });
 
 program
